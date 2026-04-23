@@ -12,6 +12,10 @@ Thumbs.db
 *.log
 /vendor/
 
+# Node
+node_modules/
+package-lock.json
+
 # Env / secrets
 .env
 .env.*

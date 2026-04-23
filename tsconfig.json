@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "module": "None",
+    "outFile": "assets/js/app.js",
+    "rootDir": "src",
+    "strict": false,
+    "noImplicitAny": false,
+    "lib": ["ES2017", "DOM"],
+    "removeComments": false,
+    "sourceMap": false,
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -19,7 +19,7 @@ if (!preg_match('/^[a-zA-Z0-9_\-\.]+$/', $db) || !preg_match('/^[a-zA-Z0-9_\-\.]
 try {
     $pdo = getConnection($cfg);
 
-    $stmt = $pdo->query("DESCRIBE `{$db}`.`{$table}`");
+    $stmt = $pdo->query("SHOW FULL COLUMNS FROM `{$db}`.`{$table}`");
     $structure = $stmt->fetchAll();
 
     jsonOut(['success' => true, 'structure' => $structure]);

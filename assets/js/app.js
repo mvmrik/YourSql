@@ -1,3 +1,222 @@
+// ── Themes ────────────────────────────────────────────────────────────────────
+const THEMES = {
+    'dark-blue': {
+        label: 'Dark Blue',
+        vars: {
+            '--bg': '#0f1117', '--bg-2': '#161b27', '--bg-3': '#1e2535', '--bg-4': '#252d3d',
+            '--border': '#2a3347', '--border-light': '#344060',
+            '--accent': '#4f8ef7', '--accent-hover': '#6aa0ff', '--accent-dim': 'rgba(79,142,247,.12)',
+            '--text': '#e2e8f4', '--text-muted': '#7a8aaa', '--text-dim': '#4a5568',
+            '--color-num': '#a78bfa', '--color-date': '#fbbf24',
+        }
+    },
+    'dark-gray': {
+        label: 'Dark Gray',
+        vars: {
+            '--bg': '#111111', '--bg-2': '#1a1a1a', '--bg-3': '#222222', '--bg-4': '#2a2a2a',
+            '--border': '#333333', '--border-light': '#444444',
+            '--accent': '#4f8ef7', '--accent-hover': '#6aa0ff', '--accent-dim': 'rgba(79,142,247,.12)',
+            '--text': '#e8e8e8', '--text-muted': '#888888', '--text-dim': '#555555',
+            '--color-num': '#a78bfa', '--color-date': '#fbbf24',
+        }
+    },
+    'dark-green': {
+        label: 'Dark Green',
+        vars: {
+            '--bg': '#0d1410', '--bg-2': '#141f18', '--bg-3': '#1a2820', '--bg-4': '#203028',
+            '--border': '#2a3d30', '--border-light': '#34503e',
+            '--accent': '#34d399', '--accent-hover': '#4ade80', '--accent-dim': 'rgba(52,211,153,.12)',
+            '--text': '#e2f0ea', '--text-muted': '#7aaa90', '--text-dim': '#4a6858',
+            '--color-num': '#6ee7b7', '--color-date': '#fbbf24',
+        }
+    },
+    'dark-purple': {
+        label: 'Dark Purple',
+        vars: {
+            '--bg': '#0f0d17', '--bg-2': '#17142a', '--bg-3': '#1e1a35', '--bg-4': '#252040',
+            '--border': '#2e2850', '--border-light': '#3d3668',
+            '--accent': '#a78bfa', '--accent-hover': '#c4b5fd', '--accent-dim': 'rgba(167,139,250,.12)',
+            '--text': '#ede9f4', '--text-muted': '#9a8aaa', '--text-dim': '#5a4a78',
+            '--color-num': '#c4b5fd', '--color-date': '#fbbf24',
+        }
+    },
+    'light': {
+        label: 'Light',
+        vars: {
+            '--bg': '#e8eaf0', '--bg-2': '#f0f2f7', '--bg-3': '#e2e5ed', '--bg-4': '#d8dce6',
+            '--border': '#c8cdd8', '--border-light': '#b0b7c8',
+            '--accent': '#3b6fd4', '--accent-hover': '#2d5bbf', '--accent-dim': 'rgba(59,111,212,.1)',
+            '--text': '#1a2033', '--text-muted': '#5a6480', '--text-dim': '#8a93aa',
+            '--color-num': '#6d28d9', '--color-date': '#b45309',
+        }
+    },
+};
+
+const THEME_STORAGE_KEY = 'yoursql_theme';
+const THEME_CUSTOM_KEY  = 'yoursql_custom_vars';
+
+function applyTheme(themeId, customVars = {}) {
+    const theme = THEMES[themeId] || THEMES['dark-blue'];
+    const vars  = { ...theme.vars, ...customVars };
+    const root  = document.documentElement;
+    Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
+}
+
+function loadSavedTheme() {
+    const themeId   = localStorage.getItem(THEME_STORAGE_KEY) || 'dark-blue';
+    const customRaw = localStorage.getItem(THEME_CUSTOM_KEY);
+    const custom    = customRaw ? JSON.parse(customRaw) : {};
+    applyTheme(themeId, custom);
+}
+
+function saveTheme(themeId, customVars) {
+    localStorage.setItem(THEME_STORAGE_KEY, themeId);
+    localStorage.setItem(THEME_CUSTOM_KEY, JSON.stringify(customVars));
+}
+
+loadSavedTheme();
+
+// ── Settings modal ────────────────────────────────────────────────────────────
+function openSettings() {
+    if (document.getElementById('settings-overlay')) return;
+
+    const themeId   = localStorage.getItem(THEME_STORAGE_KEY) || 'dark-blue';
+    const customRaw = localStorage.getItem(THEME_CUSTOM_KEY);
+    let   custom    = customRaw ? JSON.parse(customRaw) : {};
+
+    const CUSTOM_COLORS = [
+        { key: '--accent',       label: 'Accent color' },
+        { key: '--bg',           label: 'Background' },
+        { key: '--bg-2',         label: 'Sidebar / panels' },
+        { key: '--bg-3',         label: 'Inputs' },
+        { key: '--text',         label: 'Text' },
+        { key: '--text-muted',   label: 'Text muted' },
+        { key: '--border',       label: 'Border' },
+    ];
+
+    const themeButtons = Object.entries(THEMES).map(([id, t]) => `
+        <button class="theme-btn${id === themeId ? ' active' : ''}" data-theme="${id}">
+            <span class="theme-swatch" style="
+                background: linear-gradient(135deg, ${t.vars['--bg-2']} 50%, ${t.vars['--accent']} 50%);
+                border-color: ${t.vars['--border-light']};
+            "></span>
+            ${escHtml(t.label)}
+        </button>
+    `).join('');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'settings-overlay';
+    overlay.innerHTML = `
+        <div class="settings-modal" id="settings-modal">
+            <div class="rem-header">
+                <span class="rem-title">Settings</span>
+                <button class="rem-close" id="settings-close">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="rem-body">
+                <div class="settings-section-title">Theme</div>
+                <div class="theme-grid" id="theme-grid">${themeButtons}</div>
+
+                <div class="settings-section-title" style="margin-top:18px">Custom colors
+                    <button class="settings-reset-btn" id="settings-reset">Reset to theme defaults</button>
+                </div>
+                <div class="custom-colors-grid">
+                    ${CUSTOM_COLORS.map(c => {
+                        const theme  = THEMES[themeId] || THEMES['dark-blue'];
+                        const val    = custom[c.key] || theme.vars[c.key] || '#000000';
+                        const hex    = cssColorToHex(val);
+                        return `
+                        <div class="custom-color-row">
+                            <label class="custom-color-label">${escHtml(c.label)}</label>
+                            <div class="custom-color-right">
+                                <input type="color" class="color-picker" data-var="${c.key}" value="${hex}">
+                                <span class="color-val">${val}</span>
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    let currentTheme  = themeId;
+    let currentCustom = { ...custom };
+
+    function rerender() {
+        applyTheme(currentTheme, currentCustom);
+        saveTheme(currentTheme, currentCustom);
+    }
+
+    // Theme buttons
+    overlay.querySelectorAll('.theme-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            overlay.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentTheme  = btn.dataset.theme;
+            currentCustom = {};
+            // reset pickers to new theme values
+            const themeVars = THEMES[currentTheme].vars;
+            overlay.querySelectorAll('.color-picker').forEach(p => {
+                const val = themeVars[p.dataset.var] || '#000000';
+                p.value = cssColorToHex(val);
+                p.closest('.custom-color-row').querySelector('.color-val').textContent = val;
+            });
+            rerender();
+        });
+    });
+
+    // Color pickers
+    overlay.querySelectorAll('.color-picker').forEach(picker => {
+        picker.addEventListener('input', () => {
+            currentCustom[picker.dataset.var] = picker.value;
+            picker.closest('.custom-color-row').querySelector('.color-val').textContent = picker.value;
+            rerender();
+        });
+    });
+
+    // Reset
+    overlay.querySelector('#settings-reset').addEventListener('click', () => {
+        currentCustom = {};
+        const themeVars = THEMES[currentTheme].vars;
+        overlay.querySelectorAll('.color-picker').forEach(p => {
+            const val = themeVars[p.dataset.var] || '#000000';
+            p.value = cssColorToHex(val);
+            p.closest('.custom-color-row').querySelector('.color-val').textContent = val;
+        });
+        rerender();
+    });
+
+    // Close
+    function closeSettings() { overlay.remove(); }
+    overlay.querySelector('#settings-close').addEventListener('click', closeSettings);
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeSettings(); });
+}
+
+function cssColorToHex(color) {
+    // handles #rrggbb, #rgb, rgba(...) — returns #rrggbb for color input
+    if (!color) return '#000000';
+    color = color.trim();
+    if (color.startsWith('#')) {
+        if (color.length === 4) {
+            return '#' + color[1]+color[1]+color[2]+color[2]+color[3]+color[3];
+        }
+        return color.slice(0, 7);
+    }
+    // rgba/rgb — extract rgb values
+    const m = color.match(/[\d.]+/g);
+    if (m && m.length >= 3) {
+        return '#' + [m[0], m[1], m[2]].map(n => parseInt(n).toString(16).padStart(2,'0')).join('');
+    }
+    return '#000000';
+}
+
+document.getElementById('btn-settings').addEventListener('click', openSettings);
+
 // ── State ─────────────────────────────────────────────────────────────────────
 const state = {
     currentDb: null,
@@ -211,9 +430,16 @@ const sidebar = document.getElementById('sidebar');
 const overlay = document.getElementById('sidebar-overlay');
 const mobileMenuBtn = document.getElementById('mobile-menu-btn');
 const sidebarToggle = document.getElementById('sidebar-toggle');
+const sidebarExpand = document.getElementById('sidebar-expand');
 
 sidebarToggle.addEventListener('click', () => {
-    sidebar.classList.toggle('collapsed');
+    sidebar.classList.add('collapsed');
+    document.body.classList.add('sidebar-collapsed');
+});
+
+sidebarExpand.addEventListener('click', () => {
+    sidebar.classList.remove('collapsed');
+    document.body.classList.remove('sidebar-collapsed');
 });
 
 mobileMenuBtn.addEventListener('click', () => {
@@ -242,6 +468,9 @@ async function init() {
 
         document.getElementById('server-label').textContent =
             (data.host || 'localhost') + (data.port && data.port !== 3306 ? ':' + data.port : '');
+        if (data.username) {
+            document.getElementById('server-user').textContent = data.username;
+        }
 
         await loadDatabases();
     } catch (err) {
@@ -316,6 +545,9 @@ async function toggleDb(item, dbName) {
 
     if (isOpen) {
         item.classList.remove('open');
+        state.currentDb = null;
+        state.currentTable = null;
+        updateSearchContext(null);
         return;
     }
 
@@ -367,14 +599,39 @@ function renderTables(container, dbName, tables) {
 // ── Search filter ─────────────────────────────────────────────────────────────
 document.getElementById('db-search').addEventListener('input', function () {
     const q = this.value.toLowerCase();
-    document.querySelectorAll('.db-item').forEach(item => {
-        const name = (item.dataset.db || '').toLowerCase();
-        item.style.display = name.includes(q) ? '' : 'none';
-    });
+    if (state.currentDb) {
+        const dbItem = document.querySelector(`.db-item[data-db="${CSS.escape(state.currentDb)}"]`);
+        if (dbItem) {
+            dbItem.querySelectorAll('.table-item').forEach(item => {
+                const name = (item.dataset.table || item.querySelector('.table-name')?.textContent || '').toLowerCase();
+                item.style.display = name.includes(q) ? '' : 'none';
+            });
+        }
+    } else {
+        document.querySelectorAll('.db-item').forEach(item => {
+            const name = (item.dataset.db || '').toLowerCase();
+            item.style.display = name.includes(q) ? '' : 'none';
+        });
+    }
 });
+
+// ── Search placeholder helper ──────────────────────────────────────────────────
+function updateSearchContext(dbName) {
+    const input = document.getElementById('db-search');
+    input.value = '';
+    if (dbName) {
+        input.placeholder = 'Search tables...';
+        // restore all db-items visibility
+        document.querySelectorAll('.db-item').forEach(i => i.style.display = '');
+    } else {
+        input.placeholder = 'Search databases...';
+        document.querySelectorAll('.db-item').forEach(i => i.style.display = '');
+    }
+}
 
 // ── Select database ───────────────────────────────────────────────────────────
 function selectDatabase(dbName) {
+    updateSearchContext(dbName);
     state.currentDb = dbName;
     state.currentTable = null;
 
@@ -2048,6 +2305,19 @@ const TYPES_WITH_DECIMALS = new Set(['FLOAT','DOUBLE','DECIMAL','NUMERIC']);
 const TYPES_WITH_VALUES   = new Set(['ENUM','SET']); // comma-separated values
 const TYPES_NO_DEFAULT    = new Set(['TEXT','TINYTEXT','MEDIUMTEXT','LONGTEXT','BLOB','TINYBLOB','MEDIUMBLOB','LONGBLOB','JSON','GEOMETRY']);
 const TYPES_WITH_AUTO_INC = new Set(['TINYINT','SMALLINT','MEDIUMINT','INT','BIGINT']);
+const TYPES_WITH_CHARSET  = new Set(['CHAR','VARCHAR','TINYTEXT','TEXT','MEDIUMTEXT','LONGTEXT','ENUM','SET']);
+
+let _collationCache = null;
+async function getCollations() {
+    if (_collationCache) return _collationCache;
+    try {
+        const data = await api('collations');
+        _collationCache = data.collations || [];
+    } catch {
+        _collationCache = [];
+    }
+    return _collationCache;
+}
 
 function parseColumnDef(row) {
     // row = { Field, Type, Null, Key, Default, Extra }
@@ -2089,6 +2359,7 @@ function parseColumnDef(row) {
         key:          row.Key || '',
         extra:        row.Extra || '',
         comment:      row.Comment || '',
+        collation:    row.Collation || '',
     };
 }
 
@@ -2122,6 +2393,7 @@ function collectEditorState() {
             autoIncrement: get('.col-ai')?.checked || false,
             primary:       get('.col-primary')?.checked || false,
             key:           get('.col-primary')?.checked ? 'PRI' : (tr.dataset.key || ''),
+            collation:     get('.col-collation')?.value || '',
         });
     });
     return result;
@@ -2168,6 +2440,7 @@ function renderStructure(container, columns, editMode, onUpdate) {
                         <th>Field</th>
                         <th>Type</th>
                         <th>Length / Values</th>
+                        <th>Collation</th>
                         <th>Unsigned</th>
                         <th>Allow NULL</th>
                         <th>Default</th>
@@ -2208,6 +2481,7 @@ function buildEditorRow(col, idx) {
     const showLen     = TYPES_WITH_LENGTH.has(col.baseType) && !TYPES_WITH_VALUES.has(col.baseType);
     const showDec     = TYPES_WITH_DECIMALS.has(col.baseType);
     const showEnum    = TYPES_WITH_VALUES.has(col.baseType);
+    const showCharset = TYPES_WITH_CHARSET.has(col.baseType);
     const showUnsigned = (TYPES_WITH_LENGTH.has(col.baseType) && !TYPES_WITH_VALUES.has(col.baseType) && !['CHAR','VARCHAR','BINARY','VARBINARY','BIT'].includes(col.baseType)) || TYPES_WITH_DECIMALS.has(col.baseType);
     const canAI       = TYPES_WITH_AUTO_INC.has(col.baseType);
     const canDefault  = !TYPES_NO_DEFAULT.has(col.baseType);
@@ -2242,6 +2516,13 @@ function buildEditorRow(col, idx) {
             </span>
             <span class="col-enum-wrap"${showEnum?'':' style="display:none"'}>
                 <input class="col-enum tbl-input" value="${escAttr(col.enumValues)}" placeholder="'a','b','c'" style="width:160px">
+            </span>
+        </td>
+        <td class="col-collation-cell">
+            <span class="col-collation-wrap"${showCharset?'':' style="display:none"'}>
+                <select class="col-collation tbl-input tbl-select" style="width:170px">
+                    <option value="">— inherit —</option>
+                </select>
             </span>
         </td>
         <td style="text-align:center">
@@ -2279,8 +2560,45 @@ function buildEditorRow(col, idx) {
     </tr>`;
 }
 
+function buildCollationOptions(collations, current) {
+    const byCharset = {};
+    collations.forEach(c => {
+        if (!byCharset[c.charset]) byCharset[c.charset] = [];
+        byCharset[c.charset].push(c);
+    });
+    let opts = '<option value="">— inherit —</option>';
+    Object.entries(byCharset).forEach(([cs, items]) => {
+        opts += `<optgroup label="${escHtml(cs)}">`;
+        items.forEach(c => {
+            opts += `<option value="${escAttr(c.collation)}"${c.collation === current ? ' selected' : ''}>${escHtml(c.collation)}${c.isDefault ? ' ✓' : ''}</option>`;
+        });
+        opts += '</optgroup>';
+    });
+    return opts;
+}
+
+function fillCollationSelects(container, columns) {
+    getCollations().then(collations => {
+        container.querySelectorAll('tr[data-idx] .col-collation').forEach(sel => {
+            const idx     = parseInt(sel.closest('tr').dataset.idx);
+            const current = columns[idx]?.collation || '';
+            sel.innerHTML = buildCollationOptions(collations, current);
+        });
+    });
+}
+
+function fillNewRowCollation(tr) {
+    getCollations().then(collations => {
+        const sel = tr.querySelector('.col-collation');
+        if (sel) sel.innerHTML = buildCollationOptions(collations, '');
+    });
+}
+
 function wireEditorEvents(container, columns, onUpdate) {
     const tbody = container.querySelector('#struct-editor-body');
+
+    // Load collations async
+    fillCollationSelects(container, columns);
 
     // Type change → show/hide fields
     tbody.addEventListener('change', (e) => {
@@ -2321,6 +2639,7 @@ function wireEditorEvents(container, columns, onUpdate) {
         row.outerHTML; // dummy
         tbody.insertAdjacentHTML('beforeend', buildEditorRow(newCol, idx));
         reindexRows(tbody);
+        fillNewRowCollation(tbody.querySelector(`tr[data-idx="${idx}"]`) || tbody.lastElementChild);
     });
 
     // Drag & drop reorder
@@ -2372,6 +2691,7 @@ function updateRowVisibility(tr, type) {
     setVisible(tr.querySelector('.col-len-wrap'), showLen);
     setVisible(tr.querySelector('.col-dec-wrap'), showDec);
     setVisible(tr.querySelector('.col-enum-wrap'), showEnum);
+    setVisible(tr.querySelector('.col-collation-wrap'), TYPES_WITH_CHARSET.has(type));
     setVisible(tr.querySelector('.col-unsigned-wrap'), showUnsigned);
     setVisible(tr.querySelector('.col-ai-wrap'), canAI);
 
@@ -2720,6 +3040,7 @@ function showCreateTable(dbName) {
                         <th>Field</th>
                         <th>Type</th>
                         <th>Length / Values</th>
+                        <th>Collation</th>
                         <th>Unsigned</th>
                         <th>Allow NULL</th>
                         <th>Default</th>
@@ -2759,7 +3080,7 @@ function showCreateTable(dbName) {
     const tbody = area.querySelector('#struct-editor-body');
     defaultCols.forEach((col, i) => tbody.insertAdjacentHTML('beforeend', buildEditorRow(col, i)));
 
-    wireEditorEvents(area, [], () => {});
+    wireEditorEvents(area, defaultCols, () => {});
 
     // Save
     area.querySelector('#create-save-btn').addEventListener('click', async () => {

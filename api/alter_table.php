@@ -81,10 +81,19 @@ try {
         // AUTO_INCREMENT
         $aiStr = $autoInc ? 'AUTO_INCREMENT' : '';
 
+        // Charset / Collation
+        $collation  = trim($col['collation'] ?? '');
+        $charsetStr = '';
+        if ($collation && preg_match('/^[a-zA-Z0-9_]+$/', $collation)) {
+            // derive charset from collation name (part before first underscore)
+            $charset = explode('_', $collation)[0];
+            $charsetStr = "CHARACTER SET {$charset} COLLATE {$collation}";
+        }
+
         // Position
         $posStr = $prev === null ? 'FIRST' : "AFTER `{$prev}`";
 
-        $colDef = trim("`{$newName}` {$typeStr} {$nullStr} {$defaultStr} {$aiStr}");
+        $colDef = trim("`{$newName}` {$typeStr} {$charsetStr} {$nullStr} {$defaultStr} {$aiStr}");
 
         // CHANGE (rename or redefine) vs MODIFY (same name, redefine)
         if ($origName && in_array($origName, $existingNames)) {

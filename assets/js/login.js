@@ -27,7 +27,7 @@ form.addEventListener('submit', async (e) => {
         const data = await res.json();
 
         if (data.success) {
-            window.location.href = 'app.html';
+            window.location.href = 'app.php';
         } else {
             showError(data.error || 'Connection failed');
         }

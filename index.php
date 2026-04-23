@@ -50,6 +50,6 @@
             </form>
         </div>
     </div>
-    <script src="assets/js/login.js"></script>
+    <script src="assets/js/login.js?v=<?= filemtime(__DIR__.'/assets/js/login.js') ?>"></script>
 </body>
 </html>

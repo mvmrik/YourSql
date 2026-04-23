@@ -63,7 +63,14 @@ try {
 
         $aiStr = $autoInc ? 'AUTO_INCREMENT' : '';
 
-        $colDefs[] = trim("`{$name}` {$typeStr} {$nullStr} {$defaultStr} {$aiStr}");
+        $collation  = trim($col['collation'] ?? '');
+        $charsetStr = '';
+        if ($collation && preg_match('/^[a-zA-Z0-9_]+$/', $collation)) {
+            $charset    = explode('_', $collation)[0];
+            $charsetStr = "CHARACTER SET {$charset} COLLATE {$collation}";
+        }
+
+        $colDefs[] = trim("`{$name}` {$typeStr} {$charsetStr} {$nullStr} {$defaultStr} {$aiStr}");
 
         if ($isPrimary) {
             $primaryKeys[] = "`{$name}`";

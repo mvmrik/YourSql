@@ -47,7 +47,7 @@ const THEMES: Record<string, Theme> = {
             '--bg': '#1e2127', '--bg-2': '#21252b', '--bg-3': '#272c35', '--bg-4': '#2c313c',
             '--border': '#3a3f4b', '--border-light': '#4b5263',
             '--accent': '#61afef', '--accent-hover': '#82c0f7', '--accent-dim': 'rgba(97,175,239,.12)',
-            '--text': '#dde1e8', '--text-muted': '#6b717d', '--text-dim': '#4b5263',
+            '--text': '#dde1e8', '--text-muted': '#9099aa', '--text-dim': '#4b5263',
             '--color-num': '#d19a66', '--color-date': '#e5c07b', '--color-str': '#98c379',
         }
     },

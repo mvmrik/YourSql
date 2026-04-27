@@ -21,4 +21,6 @@ const state: AppState = {
         _remaining:  0,
         _tickId:     null,
     },
+    tabs: [],
+    activeTabId: null,
 };

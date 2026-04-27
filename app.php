@@ -21,7 +21,7 @@
                     <path d="M6 20v8c0 3.314 8.059 6 18 6s18-2.686 18-6v-8" stroke="#4f8ef7" stroke-width="2" fill="none"/>
                     <path d="M6 28v8c0 3.314 8.059 6 18 6s18-2.686 18-6v-8" stroke="#4f8ef7" stroke-width="2" fill="none"/>
                 </svg>
-                <span>YourSQL</span><a class="sidebar-version" href="https://mvmrik.com/apps/your_sql" target="_blank" rel="noopener">v1.1.0</a>
+                <span>YourSQL</span><a class="sidebar-version" href="https://mvmrik.com/apps/your_sql" target="_blank" rel="noopener">v1.2.0</a>
             </div>
             <button class="sidebar-toggle" id="sidebar-toggle" title="Hide sidebar">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -86,6 +86,7 @@
             </button>
         </header>
 
+        <div class="tab-bar" id="tab-bar" style="display:none"></div>
         <div class="content-area" id="content-area">
             <div class="welcome-screen">
                 <div class="welcome-icon">

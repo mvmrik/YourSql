@@ -4,16 +4,22 @@ async function loadTableData(dbName: string, tableName: string, page = 1, opts: 
     const isNewTable = dbName !== state.currentDb || tableName !== state.currentTable;
     if (isNewTable) stopAutoRefresh();
 
+    // Tab management: save current, find-or-create target tab
+    const { isExisting } = tabsBeforeLoad(dbName, tableName);
+
     state.currentDb    = dbName;
     state.currentTable = tableName;
     state.page         = page;
 
+    // For an existing tab switching via sidebar click — treat as new load but keep tab state only when resetFilters
     if (isNewTable || opts.resetFilters) {
-        state.filters    = [];
-        state.sort       = [];
-        state.pageSize   = 50;
-        state.lastSql    = null;
-        state.sqlPanelOpen = false;
+        if (!isExisting || opts.resetFilters) {
+            state.filters    = [];
+            state.sort       = [];
+            state.pageSize   = 50;
+            state.lastSql    = null;
+            state.sqlPanelOpen = false;
+        }
     }
 
     setBreadcrumb([
@@ -123,6 +129,7 @@ async function loadTableData(dbName: string, tableName: string, page = 1, opts: 
 
         renderFilterBar(document.getElementById('filter-bar')!, dataRes.columns || [], colMeta);
         renderTableData(content, dataRes, colMeta);
+        tabsAfterLoad();
     } catch (err: any) {
         const tl = document.getElementById('table-loading');
         if (tl) tl.innerHTML = `<span style="color:var(--danger)">${escHtml(err.message)}</span>`;

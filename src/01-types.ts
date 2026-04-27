@@ -29,6 +29,23 @@ interface SortEntry {
     dir: 'ASC' | 'DESC';
 }
 
+interface TabState {
+    id: string;
+    dbName: string;
+    tableName: string;
+    page: number;
+    pageSize: number;
+    totalRows: number;
+    filters: Filter[];
+    sort: SortEntry[];
+    lastSql: string | null;
+    sqlPanelOpen: boolean;
+    colMeta: Record<string, ColumnDef>;
+    selection: { mode: 'none' | 'page' | 'all'; pageRows: any[] };
+    html: string;
+    scrollTop: number;
+}
+
 interface AppState {
     currentDb: string | null;
     currentTable: string | null;
@@ -50,6 +67,8 @@ interface AppState {
         _remaining: number;
         _tickId: any;
     };
+    tabs: TabState[];
+    activeTabId: string | null;
 }
 
 interface ThemeVars {

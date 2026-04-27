@@ -1,6 +1,6 @@
 {
   "name": "yoursql.mvmrik.com",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "A lightweight, self-hosted MySQL administration interface — a clean alternative to phpMyAdmin/Adminer with a modern dark UI.",
   "main": "index.js",
   "scripts": {

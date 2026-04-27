@@ -46,14 +46,16 @@ if (!$fh) {
     exit;
 }
 
-$stmt      = '';
-$bytesRead = 0;
-$executed  = 0;
-$errors    = [];
-$inString  = false;
-$strChar   = '';
-$inComment = false; // block comment
-$lastPct   = -1;
+$stmt         = '';
+$bytesRead    = 0;
+$executed     = 0;
+$errors       = [];
+$inString     = false;
+$strChar      = '';
+$inComment    = false;
+$delimiter    = ';';       // current delimiter
+$inDelimiter  = false;     // inside a DELIMITER block (procedure/function/trigger)
+$lastPct      = -1;
 
 sse(['state' => 'running', 'pct' => 0, 'executed' => 0]);
 
@@ -62,7 +64,28 @@ while (!feof($fh)) {
     if ($line === false) break;
     $bytesRead += strlen($line);
 
-    $trimmed = ltrim($line);
+    $trimmed = trim($line);
+
+    // Handle DELIMITER command — e.g. "DELIMITER ;;" or "DELIMITER ;"
+    if (preg_match('/^DELIMITER\s+(\S+)/i', $trimmed, $m)) {
+        $newDelim = $m[1];
+        if ($newDelim === ';') {
+            // Returning to standard delimiter — end of procedure block, skip it silently
+            $inDelimiter = false;
+            $delimiter   = ';';
+        } else {
+            // Entering a non-standard delimiter block (stored procedure/function/trigger)
+            $inDelimiter = true;
+            $delimiter   = $newDelim;
+        }
+        $stmt = '';
+        continue;
+    }
+
+    // Skip everything inside a DELIMITER block — we can't execute it via PDO
+    if ($inDelimiter) {
+        continue;
+    }
 
     // Skip single-line comments when not building a statement
     if ($stmt === '' && (str_starts_with($trimmed, '--') || str_starts_with($trimmed, '#'))) {
@@ -96,7 +119,8 @@ while (!feof($fh)) {
         }
 
         // Statement terminator
-        if ($ch === ';') {
+        if ($ch === $delimiter[0] && substr($line, $i, strlen($delimiter)) === $delimiter) {
+            $i += strlen($delimiter) - 1;
             $stmt = trim($stmt);
             if ($stmt !== '') {
                 try {
@@ -105,7 +129,6 @@ while (!feof($fh)) {
                 } catch (PDOException $e) {
                     $errors[] = ['stmt' => substr($stmt, 0, 120), 'error' => $e->getMessage()];
                     if (count($errors) >= 50) {
-                        // Too many errors — abort
                         fclose($fh);
                         $pdo->exec('SET FOREIGN_KEY_CHECKS=1');
                         sse(['state' => 'error', 'error' => 'Too many errors (50+). Aborting.', 'errors' => $errors]);
@@ -115,7 +138,7 @@ while (!feof($fh)) {
             }
             $stmt = '';
 
-            // Report progress every ~0.5%
+            // Report progress
             $pct = $fileSize > 0 ? (int)(($bytesRead / $fileSize) * 100) : 0;
             if ($pct !== $lastPct) {
                 $lastPct = $pct;

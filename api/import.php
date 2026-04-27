@@ -19,16 +19,28 @@ if (!$database) {
     ]);
 }
 
-if (empty($_FILES['sql_file']) || $_FILES['sql_file']['error'] !== UPLOAD_ERR_OK) {
-    $errCode = $_FILES['sql_file']['error'] ?? -1;
+if (empty($_FILES['sql_file'])) {
+    jsonOut(['success' => false, 'error' =>
+        'No file received by PHP. ' .
+        'FILES keys: [' . implode(', ', array_keys($_FILES)) . '] ' .
+        'Content-Type: ' . ($_SERVER['CONTENT_TYPE'] ?? 'none') . ' ' .
+        'Content-Length: ' . ($_SERVER['CONTENT_LENGTH'] ?? 'none') . ' ' .
+        'upload_max_filesize=' . ini_get('upload_max_filesize') . ' ' .
+        'post_max_size=' . ini_get('post_max_size') . ' ' .
+        'file_uploads=' . ini_get('file_uploads')
+    ]);
+}
+
+if ($_FILES['sql_file']['error'] !== UPLOAD_ERR_OK) {
+    $errCode = $_FILES['sql_file']['error'];
     $errMap  = [
-        UPLOAD_ERR_INI_SIZE   => 'File exceeds upload_max_filesize in php.ini',
+        UPLOAD_ERR_INI_SIZE   => 'File exceeds upload_max_filesize=' . ini_get('upload_max_filesize'),
         UPLOAD_ERR_FORM_SIZE  => 'File exceeds MAX_FILE_SIZE in form',
         UPLOAD_ERR_PARTIAL    => 'File was only partially uploaded',
-        UPLOAD_ERR_NO_FILE    => 'No file uploaded',
-        UPLOAD_ERR_NO_TMP_DIR => 'Missing tmp folder',
-        UPLOAD_ERR_CANT_WRITE => 'Failed to write file',
-        UPLOAD_ERR_EXTENSION  => 'Upload stopped by extension',
+        UPLOAD_ERR_NO_FILE    => 'No file selected',
+        UPLOAD_ERR_NO_TMP_DIR => 'Missing tmp folder — check upload_tmp_dir in php.ini',
+        UPLOAD_ERR_CANT_WRITE => 'Cannot write to tmp folder',
+        UPLOAD_ERR_EXTENSION  => 'Upload blocked by PHP extension',
     ];
     jsonOut(['success' => false, 'error' => $errMap[$errCode] ?? 'Upload error #' . $errCode]);
 }

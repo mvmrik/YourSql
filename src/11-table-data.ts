@@ -30,7 +30,10 @@ async function loadTableData(dbName: string, tableName: string, page = 1, opts: 
     setTopbarActions([
         { label: 'Structure', onClick: () => loadTableStructure(dbName, tableName) },
         { label: 'Actions ▾', dropdown: [
-            { label: 'Create Table', onClick: () => showCreateTable(dbName) },
+            { label: 'Create Table',  onClick: () => showCreateTable(dbName) },
+            { label: 'Import',        onClick: () => showImportExportModal(dbName, 'import') },
+            { label: 'Export',        onClick: () => showImportExportModal(dbName, 'export') },
+            { label: 'Manage Tables', onClick: () => showImportExportModal(dbName, 'manage') },
             { label: 'SQL Query', onClick: () => {
                 state.lastSql = null;
                 const ta = document.getElementById('sql-panel-textarea') as HTMLTextAreaElement;

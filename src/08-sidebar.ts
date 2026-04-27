@@ -186,7 +186,10 @@ function selectDatabase(dbName: string): void {
     setBreadcrumb([{ label: dbName }]);
     setTopbarActions([
         { label: 'Actions ▾', dropdown: [
-            { label: 'Create Table', onClick: () => showCreateTable(dbName) },
+            { label: 'Create Table',  onClick: () => showCreateTable(dbName) },
+            { label: 'Import',        onClick: () => showImportExportModal(dbName, 'import') },
+            { label: 'Export',        onClick: () => showImportExportModal(dbName, 'export') },
+            { label: 'Manage Tables', onClick: () => showImportExportModal(dbName, 'manage') },
         ]},
     ]);
     showDbOverview(dbName);

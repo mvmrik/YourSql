@@ -80,6 +80,65 @@
 .form-row .form-group { flex: 1; }
 .form-row .form-group.flex-3 { flex: 3; }
 
+/* ENV login section */
+.env-login-section {
+    margin-bottom: 24px;
+}
+
+.btn-env {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: .92rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: background .15s, border-color .15s;
+    cursor: pointer;
+}
+
+.btn-env:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.btn-env:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
+
+.btn-env.loading {
+    opacity: .7;
+}
+
+.env-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 20px;
+    color: var(--text-dim);
+    font-size: .78rem;
+}
+
+.env-divider::before,
+.env-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+#env-error {
+    margin-top: 10px;
+    margin-bottom: 0;
+}
+
 .optional {
     color: var(--text-dim);
     font-weight: 400;

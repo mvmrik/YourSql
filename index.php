@@ -1,4 +1,49 @@
-<!DOCTYPE html>
+<?php
+require __DIR__ . '/api/_session.php';
+
+// Auto-login from .env if session not already active
+if (empty($_SESSION['db_config'])) {
+    $envFile = __DIR__ . '/.env';
+    if (file_exists($envFile)) {
+        $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $env = [];
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, '#')) continue;
+            if (!str_contains($line, '=')) continue;
+            [$key, $val] = explode('=', $line, 2);
+            $env[trim($key)] = trim($val, " \t\"'");
+        }
+
+        $username = $env['DB_USERNAME'] ?? $env['DB_USER'] ?? '';
+        if ($username) {
+            $cfg = [
+                'host'     => $env['DB_HOST']     ?? 'localhost',
+                'port'     => (int)($env['DB_PORT']     ?? 3306),
+                'username' => $username,
+                'password' => $env['DB_PASSWORD'] ?? $env['DB_PASS'] ?? '',
+                'database' => $env['DB_DATABASE'] ?? $env['DB_NAME'] ?? '',
+            ];
+            try {
+                $pdo = getConnection($cfg);
+                $pdo->query('SELECT 1');
+                $_SESSION['db_config'] = $cfg;
+                header('Location: app.php');
+                exit;
+            } catch (PDOException) {
+                // Fall through to manual login form with error
+                $envError = 'Auto-connect failed — check your .env credentials';
+            }
+        }
+    }
+}
+
+// Already logged in
+if (!empty($_SESSION['db_config'])) {
+    header('Location: app.php');
+    exit;
+}
+?><!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -19,6 +64,11 @@
                 </svg>
                 <h1>YourSQL</h1>
             </div>
+
+            <?php if (!empty($envError)): ?>
+            <div class="error-msg" style="margin-bottom:16px"><?= htmlspecialchars($envError) ?></div>
+            <?php endif; ?>
+
             <form id="login-form" autocomplete="off">
                 <div class="form-group">
                     <label for="host">Host</label>

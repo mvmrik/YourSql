@@ -1795,6 +1795,16 @@ td.cell-error  { background: rgba(248,113,113,.1) !important; }
 .ie-drop-zone:hover,
 .ie-drop-zone.drag-over { border-color: var(--accent); background: var(--accent-dim); }
 .ie-drop-zone.has-file  { border-color: var(--accent); border-style: solid; }
+.ie-drop-zone.has-error { border-color: var(--danger, #ef4444); border-style: solid; }
+
+.ie-limit-badge {
+    font-size: .75rem;
+    color: var(--text-dim);
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    padding: 2px 10px;
+}
 
 .ie-import-progress {
     display: flex;

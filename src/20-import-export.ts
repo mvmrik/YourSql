@@ -171,6 +171,7 @@ function showImportExportModal(dbName: string, initialTab: IETab = 'export'): vo
                             <path d="M7.646 1.146a.5.5 0 01.708 0l3 3a.5.5 0 01-.708.708L8.5 2.707V11.5a.5.5 0 01-1 0V2.707L5.354 4.854a.5.5 0 11-.708-.708l3-3z"/>
                         </svg>
                         <span id="ie-drop-label">Drop .sql file here or <u>browse</u></span>
+                        <span class="ie-limit-badge hidden" id="ie-limit-badge"></span>
                         <input type="file" id="ie-file-input" accept=".sql" style="display:none">
                     </div>
                 </div>
@@ -246,14 +247,36 @@ function showImportExportModal(dbName: string, initialTab: IETab = 'export'): vo
     });
 
     // Import — file input
-    const fileInput  = overlay.querySelector('#ie-file-input') as HTMLInputElement;
-    const dropZone   = overlay.querySelector('#ie-drop-zone') as HTMLElement;
-    const dropLabel  = overlay.querySelector('#ie-drop-label') as HTMLElement;
-    const importBtn  = overlay.querySelector('#btn-import') as HTMLButtonElement;
+    const fileInput   = overlay.querySelector('#ie-file-input') as HTMLInputElement;
+    const dropZone    = overlay.querySelector('#ie-drop-zone') as HTMLElement;
+    const dropLabel   = overlay.querySelector('#ie-drop-label') as HTMLElement;
+    const importBtn   = overlay.querySelector('#btn-import') as HTMLButtonElement;
+    const limitBadge  = overlay.querySelector('#ie-limit-badge') as HTMLElement;
     let   selectedFile: File | null = null;
+    let   maxBytes = Infinity;
+
+    // Load server limits and show in UI
+    fetch('api/upload_limits.php', { method: 'POST' })
+        .then(r => r.json())
+        .then(d => {
+            if (!d.success) return;
+            maxBytes = d.effective_bytes;
+            limitBadge.textContent = `Server limit: ${formatBytes(maxBytes)}`;
+            limitBadge.classList.remove('hidden');
+        })
+        .catch(() => {});
 
     function setFile(file: File): void {
+        if (file.size > maxBytes && maxBytes !== Infinity) {
+            dropLabel.innerHTML = `<span style="color:var(--danger)"><strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)}) — exceeds server limit of ${formatBytes(maxBytes)}</span>`;
+            dropZone.classList.remove('has-file');
+            dropZone.classList.add('has-error');
+            importBtn.disabled = true;
+            selectedFile = null;
+            return;
+        }
         selectedFile = file;
+        dropZone.classList.remove('has-error');
         dropLabel.innerHTML = `<strong>${escHtml(file.name)}</strong> (${formatBytes(file.size)})`;
         dropZone.classList.add('has-file');
         importBtn.disabled = false;
@@ -506,13 +529,14 @@ async function runImport(overlay: Element, dbName: string, file: File): Promise<
     progressBar.style.width = '0%';
     progressInfo.textContent = 'Uploading...';
 
-    // Step 1: Upload — database as GET param so it survives even if $_POST is wiped by oversized body
-    const form = new FormData();
-    form.append('sql_file', file);
-
+    // Step 1: Upload — raw binary stream, bypasses upload_max_filesize entirely
     let importId: string;
     try {
-        const res  = await fetch('api/import.php?database=' + encodeURIComponent(dbName), { method: 'POST', body: form });
+        const res = await fetch('api/import.php?database=' + encodeURIComponent(dbName), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: file,
+        });
         const data = await res.json();
         if (!data.success) { showImportError(progressInfo, errorsBox, data.error); importBtn.disabled = false; return; }
         importId = data.import_id;

@@ -8,7 +8,7 @@ const THEMES: Record<string, Theme> = {
             '--border': '#2a3347', '--border-light': '#344060',
             '--accent': '#4f8ef7', '--accent-hover': '#6aa0ff', '--accent-dim': 'rgba(79,142,247,.12)',
             '--text': '#e2e8f4', '--text-muted': '#7a8aaa', '--text-dim': '#4a5568',
-            '--color-num': '#a78bfa', '--color-date': '#fbbf24',
+            '--color-num': '#a78bfa', '--color-date': '#fbbf24', '--color-str': '#e2e8f4',
         }
     },
     'dark-gray': {
@@ -18,7 +18,7 @@ const THEMES: Record<string, Theme> = {
             '--border': '#333333', '--border-light': '#444444',
             '--accent': '#4f8ef7', '--accent-hover': '#6aa0ff', '--accent-dim': 'rgba(79,142,247,.12)',
             '--text': '#e8e8e8', '--text-muted': '#888888', '--text-dim': '#555555',
-            '--color-num': '#a78bfa', '--color-date': '#fbbf24',
+            '--color-num': '#a78bfa', '--color-date': '#fbbf24', '--color-str': '#e8e8e8',
         }
     },
     'dark-green': {
@@ -28,7 +28,7 @@ const THEMES: Record<string, Theme> = {
             '--border': '#2a3d30', '--border-light': '#34503e',
             '--accent': '#34d399', '--accent-hover': '#4ade80', '--accent-dim': 'rgba(52,211,153,.12)',
             '--text': '#e2f0ea', '--text-muted': '#7aaa90', '--text-dim': '#4a6858',
-            '--color-num': '#6ee7b7', '--color-date': '#fbbf24',
+            '--color-num': '#6ee7b7', '--color-date': '#f9a825', '--color-str': '#e2f0ea',
         }
     },
     'dark-purple': {
@@ -38,7 +38,27 @@ const THEMES: Record<string, Theme> = {
             '--border': '#2e2850', '--border-light': '#3d3668',
             '--accent': '#a78bfa', '--accent-hover': '#c4b5fd', '--accent-dim': 'rgba(167,139,250,.12)',
             '--text': '#ede9f4', '--text-muted': '#9a8aaa', '--text-dim': '#5a4a78',
-            '--color-num': '#c4b5fd', '--color-date': '#fbbf24',
+            '--color-num': '#f472b6', '--color-date': '#fbbf24', '--color-str': '#ede9f4',
+        }
+    },
+    'one-dark-pro-night': {
+        label: 'One Dark Pro Night',
+        vars: {
+            '--bg': '#1e2127', '--bg-2': '#21252b', '--bg-3': '#272c35', '--bg-4': '#2c313c',
+            '--border': '#3a3f4b', '--border-light': '#4b5263',
+            '--accent': '#61afef', '--accent-hover': '#82c0f7', '--accent-dim': 'rgba(97,175,239,.12)',
+            '--text': '#dde1e8', '--text-muted': '#6b717d', '--text-dim': '#4b5263',
+            '--color-num': '#d19a66', '--color-date': '#e5c07b', '--color-str': '#98c379',
+        }
+    },
+    'one-dark': {
+        label: 'One Dark',
+        vars: {
+            '--bg': '#21252b', '--bg-2': '#282c34', '--bg-3': '#2c313a', '--bg-4': '#333842',
+            '--border': '#3e4451', '--border-light': '#4b5263',
+            '--accent': '#61afef', '--accent-hover': '#82c0f7', '--accent-dim': 'rgba(97,175,239,.12)',
+            '--text': '#dde1e8', '--text-muted': '#7a8499', '--text-dim': '#4b5263',
+            '--color-num': '#d19a66', '--color-date': '#e5c07b', '--color-str': '#98c379',
         }
     },
     'light': {
@@ -48,7 +68,7 @@ const THEMES: Record<string, Theme> = {
             '--border': '#c8cdd8', '--border-light': '#b0b7c8',
             '--accent': '#3b6fd4', '--accent-hover': '#2d5bbf', '--accent-dim': 'rgba(59,111,212,.1)',
             '--text': '#1a2033', '--text-muted': '#5a6480', '--text-dim': '#8a93aa',
-            '--color-num': '#6d28d9', '--color-date': '#b45309',
+            '--color-num': '#6d28d9', '--color-date': '#b45309', '--color-str': '#1a2033',
         }
     },
 };
@@ -64,7 +84,7 @@ function applyTheme(themeId: string, customVars: Record<string, string> = {}): v
 }
 
 function loadSavedTheme(): void {
-    const themeId   = localStorage.getItem(THEME_STORAGE_KEY) || 'dark-blue';
+    const themeId   = localStorage.getItem(THEME_STORAGE_KEY) || 'light';
     const customRaw = localStorage.getItem(THEME_CUSTOM_KEY);
     const custom    = customRaw ? JSON.parse(customRaw) : {};
     applyTheme(themeId, custom);
@@ -98,7 +118,7 @@ function cssColorToHex(color: string): string {
 function openSettings(): void {
     if (document.getElementById('settings-overlay')) return;
 
-    const themeId   = localStorage.getItem(THEME_STORAGE_KEY) || 'dark-blue';
+    const themeId   = localStorage.getItem(THEME_STORAGE_KEY) || 'light';
     const customRaw = localStorage.getItem(THEME_CUSTOM_KEY);
     let custom: Record<string, string> = customRaw ? JSON.parse(customRaw) : {};
 
@@ -110,6 +130,9 @@ function openSettings(): void {
         { key: '--text',       label: 'Text' },
         { key: '--text-muted', label: 'Text muted' },
         { key: '--border',     label: 'Border' },
+        { key: '--color-str',  label: 'Text values' },
+        { key: '--color-num',  label: 'Number values' },
+        { key: '--color-date', label: 'Date values' },
     ];
 
     const themeButtons = Object.entries(THEMES).map(([id, t]) => `

@@ -67,6 +67,7 @@ interface ThemeVars {
     '--text-dim': string;
     '--color-num': string;
     '--color-date': string;
+    '--color-str': string;
     [key: string]: string;
 }
 

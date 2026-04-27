@@ -573,9 +573,9 @@ body.sidebar-collapsed .sidebar-expand { display: flex; }
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: var(--bg-3); }
 
-.data-table td.null-val { color: var(--text-dim); font-style: italic; }
-.data-table td.num-val { color: var(--color-num); font-family: var(--font-mono); font-size: .8rem; }
-.data-table td.str-val { }
+.data-table td.null-val  { color: var(--text-dim); font-style: italic; }
+.data-table td.num-val  { color: var(--color-num); font-family: var(--font-mono); font-size: .8rem; }
+.data-table td.str-val  { color: var(--color-str); }
 .data-table td.date-val { color: var(--color-date); font-size: .8rem; }
 
 .table-empty {

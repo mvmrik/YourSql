@@ -8,9 +8,19 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonOut(['success' => false, 'error' => 'POST required']);
 }
 
+// When the upload exceeds post_max_size, PHP empties $_POST and $_FILES entirely
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($_POST) && empty($_FILES)) {
+    $postMax    = ini_get('post_max_size');
+    $uploadMax  = ini_get('upload_max_filesize');
+    jsonOut(['success' => false, 'error' =>
+        "Upload was rejected by PHP (file too large). " .
+        "Server limits: upload_max_filesize={$uploadMax}, post_max_size={$postMax}."
+    ]);
+}
+
 $database = trim($_POST['database'] ?? '');
 if (!$database) {
-    jsonOut(['success' => false, 'error' => 'Missing database']);
+    jsonOut(['success' => false, 'error' => 'Missing database — this usually means the upload exceeded the PHP size limit (upload_max_filesize=' . ini_get('upload_max_filesize') . ')']);
 }
 
 if (empty($_FILES['sql_file']) || $_FILES['sql_file']['error'] !== UPLOAD_ERR_OK) {

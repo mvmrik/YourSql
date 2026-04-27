@@ -394,6 +394,15 @@ async function runTableOp(overlay: Element, dbName: string, op: ManageOp, tables
             if (op === 'drop') {
                 await loadManageTables(overlay, dbName);
                 await loadExportTables(overlay, dbName);
+                // Reload sidebar tables list and overview
+                const tablesEl = document.querySelector(`.db-item[data-db="${CSS.escape(dbName)}"] .db-tables`) as HTMLElement | null;
+                if (tablesEl) {
+                    delete tablesEl.dataset.loaded;
+                    tablesEl.innerHTML = '';
+                    const td = await api('tables', { database: dbName });
+                    renderTables(tablesEl, dbName, td.tables || []);
+                }
+                showDbOverview(dbName);
             } else {
                 overlay.querySelectorAll<HTMLInputElement>('.mgr-table-cb:checked').forEach(cb => { cb.checked = false; });
                 (overlay.querySelector('#mgr-all-check') as HTMLInputElement).checked = false;
@@ -547,6 +556,14 @@ async function runImport(overlay: Element, dbName: string, file: File): Promise<
 
             toast('Import completed: ' + msg.executed + ' statements', 'success');
             dropZone.classList.remove('has-file');
+            // Reload sidebar and overview
+            const tablesEl = document.querySelector(`.db-item[data-db="${CSS.escape(dbName)}"] .db-tables`) as HTMLElement | null;
+            if (tablesEl) {
+                delete tablesEl.dataset.loaded;
+                tablesEl.innerHTML = '';
+                api('tables', { database: dbName }).then(td => renderTables(tablesEl, dbName, td.tables || []));
+            }
+            showDbOverview(dbName);
         }
 
         if (msg.state === 'error') {

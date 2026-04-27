@@ -3516,13 +3516,12 @@ async function runImport(overlay, dbName, file) {
     errorsBox.innerHTML = '';
     progressBar.style.width = '0%';
     progressInfo.textContent = 'Uploading...';
-    // Step 1: Upload
+    // Step 1: Upload — database as GET param so it survives even if $_POST is wiped by oversized body
     const form = new FormData();
-    form.append('database', dbName);
     form.append('sql_file', file);
     let importId;
     try {
-        const res = await fetch('api/import.php', { method: 'POST', body: form });
+        const res = await fetch('api/import.php?database=' + encodeURIComponent(dbName), { method: 'POST', body: form });
         const data = await res.json();
         if (!data.success) {
             showImportError(progressInfo, errorsBox, data.error);

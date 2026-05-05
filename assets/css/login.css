@@ -146,6 +146,37 @@
     letter-spacing: 0;
 }
 
+/* App-password screen */
+.app-password-hint {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: .88rem;
+    margin-bottom: 24px;
+    margin-top: -16px;
+}
+
+.remember-row {
+    margin-bottom: 16px;
+}
+
+.remember-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .88rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.remember-label input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
 .btn-primary {
     width: 100%;
     padding: 11px;

@@ -123,6 +123,7 @@ async function loadTableData(dbName: string, tableName: string, page = 1, opts: 
             });
             state.colMeta = cm;
             colMeta = cm;
+            setFkMeta(structRes.foreign_keys || []);
         }
 
         (document.getElementById('table-loading') as HTMLElement).style.display = 'none';
@@ -152,7 +153,11 @@ function renderCellView(td: HTMLElement, val: any): void {
 }
 
 function renderTableData(container: HTMLElement, data: any, colMeta: Record<string, ColumnDef> = {}): void {
-    const { columns, rows, total, page, page_size } = data;
+    const { rows, total, page, page_size } = data;
+    const dbName    = state.currentDb!;
+    const tableName = state.currentTable!;
+    const columns   = applyPinnedOrder(dbName, tableName, data.columns || []);
+    const pinned    = getPinnedCols(dbName, tableName);
 
     if (!columns || !columns.length) {
         container.innerHTML = '<div class="table-empty">No columns found.</div>';
@@ -192,7 +197,8 @@ function renderTableData(container: HTMLElement, data: any, colMeta: Record<stri
 
     columns.forEach((c: string) => {
         const th = document.createElement('th');
-        th.className = 'th-sortable';
+        const isPinned = pinned.includes(c);
+        th.className = 'th-sortable' + (isPinned ? ' th-pinned' : '');
 
         const hasFilter = state.filters.some(f => f.col === c);
         const sortEntry = state.sort.find(s => s.col === c);
@@ -202,6 +208,9 @@ function renderTableData(container: HTMLElement, data: any, colMeta: Record<stri
         label.className = 'th-label' + (hasFilter ? ' th-filtered' : '');
         label.textContent = c;
         label.addEventListener('click', () => addFilter(c));
+        label.addEventListener('contextmenu', (e: Event) => {
+            showColContextMenu(e as MouseEvent, c, dbName, tableName);
+        });
 
         const arrow = document.createElement('span');
         arrow.className = 'th-sort-btn' + (sortEntry ? ' th-sort-active' : '');
@@ -392,6 +401,7 @@ function buildDataRow(row: Record<string, any>, columns: string[], colMeta: Reco
         td.dataset.origVal = val === null ? '\x00NULL' : String(val);
 
         renderCellView(td, val);
+        renderFkIcon(td, col, val);
         td.addEventListener('dblclick', () => {
             const currentVal = (td.closest('tr') as any)?._rowData?.[col] ?? val;
             startInlineEdit(td, col, currentVal, meta, (td.closest('tr') as any)?._rowData ?? row, columns, colMeta);

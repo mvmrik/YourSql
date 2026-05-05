@@ -172,6 +172,42 @@ function renderTables(container: HTMLElement, dbName: string, tables: { name: st
     });
 }
 
+// ── Expand sidebar to a specific table (used on tab restore) ──────────────────
+
+async function expandSidebarToTable(dbName: string, tableName: string): Promise<void> {
+    const dbItem = document.querySelector(`.db-item[data-db="${CSS.escape(dbName)}"]`) as HTMLElement | null;
+    if (!dbItem) return;
+
+    // Expand the DB item if not already open
+    if (!dbItem.classList.contains('open')) {
+        document.querySelectorAll('.db-item.open').forEach(el => el.classList.remove('open'));
+        dbItem.classList.add('open');
+
+        document.querySelectorAll('.db-header.active').forEach(e => e.classList.remove('active'));
+        dbItem.querySelector('.db-header')?.classList.add('active');
+
+        updateSearchContext(dbName);
+
+        // Load tables if not yet loaded
+        const tablesEl = dbItem.querySelector('.db-tables') as HTMLElement;
+        if (!tablesEl.dataset.loaded) {
+            tablesEl.innerHTML = '<div class="loading-tree" style="padding-left:36px"><div class="spinner"></div></div>';
+            try {
+                const data = await api('tables', { database: dbName });
+                tablesEl.dataset.loaded = '1';
+                renderTables(tablesEl, dbName, data.tables || []);
+            } catch {
+                tablesEl.innerHTML = '';
+            }
+        }
+    }
+
+    // Mark the table as active
+    document.querySelectorAll('.table-item.active').forEach(e => e.classList.remove('active'));
+    const tEl = dbItem.querySelector(`.table-item[data-table="${CSS.escape(tableName)}"]`);
+    if (tEl) tEl.classList.add('active');
+}
+
 // ── Select database ───────────────────────────────────────────────────────────
 
 function selectDatabase(dbName: string): void {

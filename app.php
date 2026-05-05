@@ -1,4 +1,15 @@
-<!DOCTYPE html>
+<?php
+require_once __DIR__ . '/api/_settings_db.php';
+$_customThemeVars = [];
+$_customThemeBase = null;
+try {
+    $s = getAllSettings();
+    if (!empty($s['custom_theme_vars'])) {
+        $_customThemeVars = json_decode($s['custom_theme_vars'], true) ?: [];
+        $_customThemeBase = $s['custom_theme_base'] ?? null;
+    }
+} catch (Exception $e) {}
+?><!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -8,6 +19,23 @@
     <link rel="stylesheet" href="assets/css/app.css?v=<?= filemtime(__DIR__.'/assets/css/app.css') ?>">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+<?php if (!empty($_customThemeVars)): ?>
+    <style id="server-theme">
+        :root {
+<?php foreach ($_customThemeVars as $k => $v):
+    // Only allow valid CSS custom property names
+    if (!preg_match('/^--[a-zA-Z0-9_-]+$/', $k)) continue;
+    echo '            ' . htmlspecialchars($k, ENT_QUOTES) . ': ' . htmlspecialchars($v, ENT_QUOTES) . ";\n";
+endforeach; ?>
+        }
+    </style>
+<?php endif; ?>
+    <script>
+        window.__serverTheme = <?= json_encode(!empty($_customThemeVars) ? [
+            'vars' => $_customThemeVars,
+            'base' => $_customThemeBase,
+        ] : null) ?>;
+    </script>
 </head>
 <body class="app-page">
 
@@ -21,7 +49,7 @@
                     <path d="M6 20v8c0 3.314 8.059 6 18 6s18-2.686 18-6v-8" stroke="#4f8ef7" stroke-width="2" fill="none"/>
                     <path d="M6 28v8c0 3.314 8.059 6 18 6s18-2.686 18-6v-8" stroke="#4f8ef7" stroke-width="2" fill="none"/>
                 </svg>
-                <span>YourSQL</span><a class="sidebar-version" href="https://mvmrik.com/apps/your-sql" target="_blank" rel="noopener">v1.3.0</a>
+                <span>YourSQL</span><a class="sidebar-version" href="https://mvmrik.com/apps/your-sql" target="_blank" rel="noopener">v1.4.0</a>
             </div>
             <button class="sidebar-toggle" id="sidebar-toggle" title="Hide sidebar">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -56,6 +84,10 @@
                 <span>Loading...</span>
             </div>
         </nav>
+
+        <div class="sidebar-footer">
+            <a href="https://mvmrik.com" target="_blank" rel="noopener">created by mvmrik</a>
+        </div>
     </aside>
 
     <!-- Mobile overlay -->

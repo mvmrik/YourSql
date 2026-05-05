@@ -6,23 +6,71 @@ function generateTabId(): string {
     return 'tab-' + (++_tabCounter);
 }
 
+// ── Persist tabs to localStorage ──────────────────────────────────────────────
+
+const TABS_STORAGE_KEY = 'yoursql_tabs';
+
+function persistTabs(): void {
+    const data = {
+        tabs: state.tabs.map(t => ({ dbName: t.dbName, tableName: t.tableName })),
+        activeDb:    state.tabs.find(t => t.id === state.activeTabId)?.dbName    ?? null,
+        activeTable: state.tabs.find(t => t.id === state.activeTabId)?.tableName ?? null,
+    };
+    localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(data));
+}
+
+async function loadPersistedTabs(): Promise<void> {
+    try {
+        const raw = localStorage.getItem(TABS_STORAGE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (!Array.isArray(data.tabs) || !data.tabs.length) return;
+
+        // Create ghost tabs (no data loaded yet)
+        data.tabs.forEach((t: { dbName: string; tableName: string }) => {
+            if (!findTab(t.dbName, t.tableName)) createTab(t.dbName, t.tableName);
+        });
+
+        // Activate the previously active tab and load its data
+        const activeTab = state.tabs.find(
+            t => t.dbName === data.activeDb && t.tableName === data.activeTable
+        ) ?? state.tabs[0];
+
+        if (activeTab) {
+            state.activeTabId = activeTab.id;
+            renderTabBar();
+
+            // Expand the DB in the sidebar and load its tables so the active
+            // table item can be rendered and marked as active
+            await expandSidebarToTable(activeTab.dbName, activeTab.tableName);
+
+            _restoringTab = true;
+            loadTableData(activeTab.dbName, activeTab.tableName, 1);
+        }
+    } catch {
+        localStorage.removeItem(TABS_STORAGE_KEY);
+    }
+}
+
+// ── Tab state ─────────────────────────────────────────────────────────────────
+
 function saveCurrentTabState(): void {
     if (!state.activeTabId || !state.currentTable) return;
     const tab = state.tabs.find(t => t.id === state.activeTabId);
     if (!tab) return;
 
     const area = document.getElementById('content-area')!;
-    tab.html        = area.innerHTML;
-    tab.scrollTop   = area.scrollTop;
-    tab.page        = state.page;
-    tab.pageSize    = state.pageSize;
-    tab.totalRows   = state.totalRows;
-    tab.filters     = state.filters.map(f => ({ ...f }));
-    tab.sort        = state.sort.map(s => ({ ...s }));
-    tab.lastSql     = state.lastSql;
+    tab.html         = area.innerHTML;
+    tab.scrollTop    = area.scrollTop;
+    tab.page         = state.page;
+    tab.pageSize     = state.pageSize;
+    tab.totalRows    = state.totalRows;
+    tab.filters      = state.filters.map(f => ({ ...f }));
+    tab.sort         = state.sort.map(s => ({ ...s }));
+    tab.lastSql      = state.lastSql;
     tab.sqlPanelOpen = state.sqlPanelOpen;
-    tab.colMeta     = { ...state.colMeta };
-    tab.selection   = { mode: state.selection.mode, pageRows: [...state.selection.pageRows] };
+    tab.colMeta      = { ...state.colMeta };
+    tab.selection    = { mode: state.selection.mode, pageRows: [...state.selection.pageRows] };
 }
 
 function findTab(dbName: string, tableName: string): TabState | undefined {
@@ -48,6 +96,7 @@ function closeTab(tabId: string): void {
     if (idx === -1) return;
 
     state.tabs.splice(idx, 1);
+    persistTabs();
 
     if (state.activeTabId === tabId) {
         state.activeTabId = null;
@@ -80,30 +129,123 @@ function closeTab(tabId: string): void {
 }
 
 function restoreTab(tab: TabState): void {
-    state.activeTabId   = tab.id;
-    state.currentDb     = tab.dbName;
-    state.currentTable  = tab.tableName;
-    state.page          = tab.page;
-    state.pageSize      = tab.pageSize;
-    state.totalRows     = tab.totalRows;
-    state.filters       = tab.filters.map(f => ({ ...f }));
-    state.sort          = tab.sort.map(s => ({ ...s }));
-    state.lastSql       = tab.lastSql;
-    state.sqlPanelOpen  = tab.sqlPanelOpen;
-    state.colMeta       = { ...tab.colMeta };
-    state.selection     = { mode: tab.selection.mode, pageRows: [...tab.selection.pageRows] };
+    state.activeTabId  = tab.id;
+    state.currentDb    = tab.dbName;
+    state.currentTable = tab.tableName;
+    state.page         = tab.page;
+    state.pageSize     = tab.pageSize;
+    state.totalRows    = tab.totalRows;
+    state.filters      = tab.filters.map(f => ({ ...f }));
+    state.sort         = tab.sort.map(s => ({ ...s }));
+    state.lastSql      = tab.lastSql;
+    state.sqlPanelOpen = tab.sqlPanelOpen;
+    state.colMeta      = { ...tab.colMeta };
+    state.selection    = { mode: tab.selection.mode, pageRows: [...tab.selection.pageRows] };
 
-    // Restore sidebar active state before triggering load
-    document.querySelectorAll('.table-item.active').forEach(e => e.classList.remove('active'));
-    const tEl = document.querySelector(`.db-item[data-db="${CSS.escape(tab.dbName)}"] .table-item[data-table="${CSS.escape(tab.tableName)}"]`);
-    if (tEl) tEl.classList.add('active');
-
+    persistTabs();
     renderTabBar();
 
-    // Re-fetch data to restore all live listeners (insert, edit, sort, pagination).
-    // State (filters, sort, page) is already restored above so the view looks identical.
+    expandSidebarToTable(tab.dbName, tab.tableName);
+
     _restoringTab = true;
     loadTableData(tab.dbName, tab.tableName, tab.page);
+}
+
+// ── Tab context menu ──────────────────────────────────────────────────────────
+
+function showTabContextMenu(e: MouseEvent, tabId: string): void {
+    e.preventDefault();
+    removeTabContextMenu();
+
+    const idx = state.tabs.findIndex(t => t.id === tabId);
+    const hasOthers = state.tabs.length > 1;
+    const hasRight  = idx < state.tabs.length - 1;
+
+    const menu = document.createElement('div');
+    menu.id = 'tab-context-menu';
+    menu.className = 'tab-context-menu';
+    menu.innerHTML = `
+        <div class="tab-ctx-item" data-action="close">Close</div>
+        <div class="tab-ctx-item${hasOthers ? '' : ' disabled'}" data-action="close-others">Close Others</div>
+        <div class="tab-ctx-item${hasRight ? '' : ' disabled'}" data-action="close-right">Close to the Right</div>
+        <div class="tab-ctx-divider"></div>
+        <div class="tab-ctx-item" data-action="close-all">Close All</div>
+    `;
+
+    menu.style.left = e.clientX + 'px';
+    menu.style.top  = e.clientY + 'px';
+    document.body.appendChild(menu);
+
+    menu.querySelectorAll('.tab-ctx-item:not(.disabled)').forEach(item => {
+        item.addEventListener('click', () => {
+            const action = (item as HTMLElement).dataset.action!;
+            removeTabContextMenu();
+
+            if (action === 'close') {
+                closeTab(tabId);
+            } else if (action === 'close-others') {
+                state.tabs.filter(t => t.id !== tabId).map(t => t.id).forEach(id => closeTab(id));
+            } else if (action === 'close-right') {
+                state.tabs.slice(idx + 1).map(t => t.id).forEach(id => closeTab(id));
+            } else if (action === 'close-all') {
+                [...state.tabs].map(t => t.id).forEach(id => closeTab(id));
+            }
+        });
+    });
+
+    setTimeout(() => document.addEventListener('click', removeTabContextMenu, { once: true }), 0);
+}
+
+function removeTabContextMenu(): void {
+    document.getElementById('tab-context-menu')?.remove();
+}
+
+// ── Drag & drop ───────────────────────────────────────────────────────────────
+
+let _dragTabId: string | null = null;
+
+function setupTabDrag(el: HTMLElement, tabId: string): void {
+    el.draggable = true;
+
+    el.addEventListener('dragstart', (e: DragEvent) => {
+        _dragTabId = tabId;
+        el.classList.add('dragging');
+        e.dataTransfer!.effectAllowed = 'move';
+    });
+
+    el.addEventListener('dragend', () => {
+        el.classList.remove('dragging');
+        document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('drag-over'));
+        _dragTabId = null;
+    });
+
+    el.addEventListener('dragover', (e: DragEvent) => {
+        e.preventDefault();
+        if (!_dragTabId || _dragTabId === tabId) return;
+        e.dataTransfer!.dropEffect = 'move';
+        document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('drag-over'));
+        el.classList.add('drag-over');
+    });
+
+    el.addEventListener('dragleave', () => {
+        el.classList.remove('drag-over');
+    });
+
+    el.addEventListener('drop', (e: DragEvent) => {
+        e.preventDefault();
+        el.classList.remove('drag-over');
+        if (!_dragTabId || _dragTabId === tabId) return;
+
+        const fromIdx = state.tabs.findIndex(t => t.id === _dragTabId);
+        const toIdx   = state.tabs.findIndex(t => t.id === tabId);
+        if (fromIdx === -1 || toIdx === -1) return;
+
+        const [moved] = state.tabs.splice(fromIdx, 1);
+        state.tabs.splice(toIdx, 0, moved);
+
+        persistTabs();
+        renderTabBar();
+    });
 }
 
 // ── Tab bar rendering ─────────────────────────────────────────────────────────
@@ -129,15 +271,22 @@ function renderTabBar(): void {
         </div>
     `).join('');
 
-    bar.querySelectorAll('.tab-item').forEach(el => {
+    bar.querySelectorAll<HTMLElement>('.tab-item').forEach(el => {
+        const tabId = el.dataset.tabId!;
+
         el.addEventListener('click', (e: Event) => {
             if ((e.target as Element).classList.contains('tab-close')) return;
-            const tabId = (el as HTMLElement).dataset.tabId!;
             if (tabId === state.activeTabId) return;
             saveCurrentTabState();
             const tab = state.tabs.find(t => t.id === tabId)!;
             restoreTab(tab);
         });
+
+        el.addEventListener('contextmenu', (e: Event) => {
+            showTabContextMenu(e as MouseEvent, tabId);
+        });
+
+        setupTabDrag(el, tabId);
     });
 
     bar.querySelectorAll('.tab-close').forEach(btn => {
@@ -159,7 +308,8 @@ function tabsBeforeLoad(dbName: string, tableName: string): { isExisting: boolea
     const isExisting = !!tab;
     if (!tab) tab = createTab(dbName, tableName);
 
-    state.activeTabId  = tab.id;
+    state.activeTabId = tab.id;
+    persistTabs();
     renderTabBar();
 
     return { isExisting, tab };

@@ -18,11 +18,14 @@ async function loadTableStructure(dbName: string, tableName: string): Promise<vo
     area.innerHTML = `
         <div class="table-view-header">
             <div class="table-view-title">${escHtml(tableName)} — Structure</div>
-            <div class="table-view-actions">
-                <button class="btn btn-accent btn-sm" id="struct-edit-btn">Edit</button>
-            </div>
+            <div class="table-view-actions" id="struct-header-actions"></div>
         </div>
-        <div id="struct-loading" style="display:flex;gap:10px;color:var(--text-muted);align-items:center">
+        <div class="struct-tabs">
+            <button class="struct-tab active" data-tab="columns">Columns</button>
+            <button class="struct-tab" data-tab="indexes">Indexes</button>
+            <button class="struct-tab" data-tab="foreign-keys">Foreign Keys</button>
+        </div>
+        <div id="struct-loading" style="display:flex;gap:10px;color:var(--text-muted);align-items:center;padding:8px 0">
             <div class="spinner"></div> Loading structure...
         </div>
         <div id="struct-content"></div>
@@ -32,55 +35,387 @@ async function loadTableStructure(dbName: string, tableName: string): Promise<vo
         const data = await api('table_structure', { database: dbName, table: tableName });
         (document.getElementById('struct-loading') as HTMLElement).style.display = 'none';
 
-        let editMode = false;
         let columns: ColumnDef[] = (data.structure || []).map(parseColumnDef);
+        const tableCols: string[] = (data.structure || []).map((r: any) => r.Field as string);
+        let activeTab = 'columns';
+        let editMode  = false;
 
-        const render = () => renderStructure(
-            document.getElementById('struct-content')!,
-            columns,
-            editMode,
-            (newCols: ColumnDef[]) => { columns = newCols; }
-        );
+        const headerActions = document.getElementById('struct-header-actions')!;
 
-        render();
+        const renderEditBtn = () => {
+            headerActions.innerHTML = activeTab === 'columns'
+                ? `<button class="btn btn-accent btn-sm" id="struct-edit-btn">${editMode ? 'Save' : 'Edit'}</button>`
+                : '';
+            if (activeTab === 'columns') {
+                document.getElementById('struct-edit-btn')!.addEventListener('click', handleEditSave);
+                if (editMode) document.getElementById('struct-edit-btn')!.classList.add('saving');
+            }
+        };
 
-        document.getElementById('struct-edit-btn')!.addEventListener('click', async () => {
+        const renderContent = () => {
+            const content = document.getElementById('struct-content')!;
+            if (activeTab === 'columns') {
+                renderStructure(content, columns, editMode, (newCols) => { columns = newCols; });
+            } else if (activeTab === 'indexes') {
+                renderIndexesTab(content, dbName, tableName, data.indexes || [], tableCols);
+            } else {
+                renderForeignKeysTab(content, dbName, tableName, data.foreign_keys || [], data.indexes || [], tableCols);
+            }
+            renderEditBtn();
+        };
+
+        const handleEditSave = async () => {
             if (!editMode) {
                 editMode = true;
-                const btn = document.getElementById('struct-edit-btn') as HTMLButtonElement;
-                btn.textContent = 'Save';
-                btn.classList.add('saving');
-                render();
+                renderContent();
             } else {
                 const btn = document.getElementById('struct-edit-btn') as HTMLButtonElement;
-                btn.disabled    = true;
-                btn.textContent = 'Saving…';
+                btn.disabled = true; btn.textContent = 'Saving…';
                 try {
-                    await api('alter_table', {
-                        database: dbName,
-                        table:    tableName,
-                        columns:  collectEditorState(),
-                    });
+                    await api('alter_table', { database: dbName, table: tableName, columns: collectEditorState() });
                     toast('Structure saved successfully', 'success');
-                    editMode   = false;
+                    editMode = false;
                     const fresh = await api('table_structure', { database: dbName, table: tableName });
-                    columns     = (fresh.structure || []).map(parseColumnDef);
-                    btn.textContent = 'Edit';
-                    btn.disabled    = false;
-                    btn.classList.remove('saving');
-                    render();
+                    columns = (fresh.structure || []).map(parseColumnDef);
+                    renderContent();
                 } catch (err: any) {
                     toast('Error: ' + err.message, 'error');
-                    btn.textContent = 'Save';
-                    btn.disabled    = false;
+                    btn.textContent = 'Save'; btn.disabled = false;
                 }
             }
+        };
+
+        area.querySelectorAll('.struct-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                if (editMode && activeTab === 'columns') {
+                    if (!confirm('Discard unsaved column changes?')) return;
+                    editMode = false;
+                }
+                area.querySelectorAll('.struct-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                activeTab = (tab as HTMLElement).dataset.tab!;
+                renderContent();
+            });
         });
+
+        renderContent();
 
     } catch (err: any) {
         (document.getElementById('struct-loading') as HTMLElement).innerHTML =
             `<span style="color:var(--danger)">${escHtml(err.message)}</span>`;
     }
+}
+
+// ── Column picker (multi-select dropdown with checkboxes) ─────────────────────
+
+function makeColPicker(id: string, cols: string[], label: string, multi = true): string {
+    return `
+        <div class="col-picker-wrap" id="${id}-wrap">
+            <button type="button" class="col-picker-btn tbl-input" id="${id}-btn">
+                <span class="col-picker-label">${escHtml(label)}</span>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="flex-shrink:0;opacity:.5"><path d="M1 3l4 4 4-4"/></svg>
+            </button>
+            <div class="col-picker-dropdown" id="${id}-drop">
+                ${cols.map(c => `
+                    <label class="col-picker-item">
+                        <input type="${multi ? 'checkbox' : 'radio'}" name="${id}-radio" value="${escAttr(c)}"> ${escHtml(c)}
+                    </label>`).join('')}
+            </div>
+        </div>`;
+}
+
+function wireColPicker(root: HTMLElement, id: string): void {
+    const btn  = root.querySelector(`#${id}-btn`)  as HTMLButtonElement;
+    const drop = root.querySelector(`#${id}-drop`) as HTMLElement;
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = drop.classList.contains('open');
+        root.querySelectorAll('.col-picker-dropdown.open').forEach(d => d.classList.remove('open'));
+        if (!isOpen) drop.classList.add('open');
+    });
+
+    drop.addEventListener('change', () => updateColPickerLabel(root, id));
+}
+
+function updateColPickerLabel(root: HTMLElement, id: string): void {
+    const checked = [...root.querySelectorAll(`#${id}-drop input:checked`)] as HTMLInputElement[];
+    const label   = root.querySelector(`#${id}-btn .col-picker-label`)!;
+    label.textContent = checked.length ? checked.map(c => c.value).join(', ') : 'Select columns…';
+}
+
+function getColPickerValues(root: HTMLElement, id: string): string[] {
+    return ([...root.querySelectorAll(`#${id}-drop input:checked`)] as HTMLInputElement[]).map(i => i.value);
+}
+
+function setColPickerCols(root: HTMLElement, id: string, cols: string[]): void {
+    const drop = root.querySelector(`#${id}-drop`) as HTMLElement;
+    const isMulti = drop.querySelector('input[type="checkbox"]') !== null;
+    drop.innerHTML = cols.length
+        ? cols.map(c => `
+            <label class="col-picker-item">
+                <input type="${isMulti ? 'checkbox' : 'radio'}" name="${id}-radio" value="${escAttr(c)}"> ${escHtml(c)}
+            </label>`).join('')
+        : `<div class="col-picker-empty">No columns</div>`;
+    drop.addEventListener('change', () => updateColPickerLabel(root, id));
+    const label = root.querySelector(`#${id}-btn .col-picker-label`)!;
+    label.textContent = 'Select columns…';
+}
+
+// Close all pickers on outside click
+document.addEventListener('click', () => {
+    document.querySelectorAll('.col-picker-dropdown.open').forEach(d => d.classList.remove('open'));
+});
+
+// ── Indexes tab ───────────────────────────────────────────────────────────────
+
+function renderIndexesTab(container: HTMLElement, dbName: string, tableName: string, indexes: any[], tableCols: string[]): void {
+    container.innerHTML = `
+        <div class="data-table-wrap">
+            <table class="data-table">
+                <thead><tr>
+                    <th>Name</th><th>Type</th><th>Columns</th><th>Method</th><th></th>
+                </tr></thead>
+                <tbody>
+                    ${!indexes.length ? `<tr><td colspan="5" class="table-empty">No indexes</td></tr>` :
+                      indexes.map(idx => `
+                        <tr>
+                            <td><strong>${escHtml(idx.name)}</strong></td>
+                            <td><span class="badge${idx.type === 'PRIMARY' ? ' blue' : idx.type === 'UNIQUE' ? ' green' : ''}">${escHtml(idx.type)}</span></td>
+                            <td style="font-family:var(--font-mono);font-size:.82rem">${escHtml(idx.columns.join(', '))}</td>
+                            <td style="color:var(--text-muted);font-size:.82rem">${escHtml(idx.method)}</td>
+                            <td>${idx.name !== 'PRIMARY' ? `<button class="btn btn-danger btn-sm idx-drop-btn" data-name="${escAttr(idx.name)}">Drop</button>` : ''}</td>
+                        </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+        <div class="struct-add-section">
+            <h4 class="struct-section-title">Add Index</h4>
+            <div class="struct-form-row">
+                <div class="struct-form-group">
+                    <label>Name <span class="optional">(auto if empty)</span></label>
+                    <input class="tbl-input" id="idx-name" placeholder="index_name">
+                </div>
+                <div class="struct-form-group">
+                    <label>Type</label>
+                    <select class="tbl-input tbl-select" id="idx-type">
+                        <option value="INDEX">INDEX</option>
+                        <option value="UNIQUE">UNIQUE</option>
+                        <option value="PRIMARY">PRIMARY</option>
+                        <option value="FULLTEXT">FULLTEXT</option>
+                    </select>
+                </div>
+                <div class="struct-form-group">
+                    <label>Columns</label>
+                    ${makeColPicker('idx-cols', tableCols, 'Select columns…', true)}
+                </div>
+                <div class="struct-form-group struct-form-btn">
+                    <button class="btn btn-accent btn-sm" id="idx-add-btn">Add Index</button>
+                </div>
+            </div>
+            <div id="idx-error" class="error-msg hidden" style="margin-top:8px"></div>
+        </div>
+    `;
+
+    wireColPicker(container, 'idx-cols');
+
+    container.querySelectorAll('.idx-drop-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const name = (btn as HTMLElement).dataset.name!;
+            if (!confirm(`Drop index "${name}"?`)) return;
+            try {
+                await api('indexes', { action: 'drop', database: dbName, table: tableName, name });
+                toast(`Index "${name}" dropped`, 'success');
+                const fresh = await api('table_structure', { database: dbName, table: tableName });
+                renderIndexesTab(container, dbName, tableName, fresh.indexes || [], tableCols);
+            } catch (err: any) { toast('Error: ' + err.message, 'error'); }
+        });
+    });
+
+    container.querySelector('#idx-add-btn')!.addEventListener('click', async () => {
+        const name  = (container.querySelector('#idx-name') as HTMLInputElement).value.trim();
+        const type  = (container.querySelector('#idx-type') as HTMLSelectElement).value;
+        const cols  = getColPickerValues(container, 'idx-cols');
+        const errEl = container.querySelector('#idx-error')!;
+
+        if (!cols.length) { errEl.textContent = 'Select at least one column'; errEl.classList.remove('hidden'); return; }
+        errEl.classList.add('hidden');
+
+        const btn = container.querySelector('#idx-add-btn') as HTMLButtonElement;
+        btn.disabled = true; btn.textContent = 'Adding…';
+        try {
+            await api('indexes', { action: 'add', database: dbName, table: tableName, name, type, columns: cols });
+            toast('Index added', 'success');
+            const fresh = await api('table_structure', { database: dbName, table: tableName });
+            renderIndexesTab(container, dbName, tableName, fresh.indexes || [], tableCols);
+        } catch (err: any) {
+            errEl.textContent = err.message; errEl.classList.remove('hidden');
+            btn.disabled = false; btn.textContent = 'Add Index';
+        }
+    });
+}
+
+// ── Foreign Keys tab ──────────────────────────────────────────────────────────
+
+function renderForeignKeysTab(container: HTMLElement, dbName: string, tableName: string, fks: any[], indexes: any[], tableCols: string[]): void {
+    const rules = ['RESTRICT', 'CASCADE', 'SET NULL', 'NO ACTION'];
+    const ruleOpts = rules.map(r => `<option value="${r}">${r}</option>`).join('');
+
+    container.innerHTML = `
+        <div class="data-table-wrap">
+            <table class="data-table">
+                <thead><tr>
+                    <th>Name</th><th>Columns</th><th>References</th><th>On Update</th><th>On Delete</th><th></th>
+                </tr></thead>
+                <tbody>
+                    ${!fks.length ? `<tr><td colspan="6" class="table-empty">No foreign keys</td></tr>` :
+                      fks.map(fk => `
+                        <tr>
+                            <td><strong>${escHtml(fk.name)}</strong></td>
+                            <td style="font-family:var(--font-mono);font-size:.82rem">${escHtml(fk.columns.join(', '))}</td>
+                            <td style="font-family:var(--font-mono);font-size:.82rem">
+                                <span style="color:var(--accent)">${escHtml(fk.ref_db !== dbName ? fk.ref_db + '.' : '')}${escHtml(fk.ref_table)}</span>
+                                (${escHtml(fk.ref_cols.join(', '))})
+                            </td>
+                            <td><span class="badge">${escHtml(fk.on_update)}</span></td>
+                            <td><span class="badge">${escHtml(fk.on_delete)}</span></td>
+                            <td><button class="btn btn-danger btn-sm fk-drop-btn" data-name="${escAttr(fk.name)}">Drop</button></td>
+                        </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+        <div class="struct-add-section">
+            <h4 class="struct-section-title">Add Foreign Key</h4>
+            <div class="struct-form-row">
+                <div class="struct-form-group">
+                    <label>Name <span class="optional">(auto if empty)</span></label>
+                    <input class="tbl-input" id="fk-name" placeholder="fk_name">
+                </div>
+                <div class="struct-form-group">
+                    <label>Column(s)</label>
+                    ${makeColPicker('fk-cols', tableCols, 'Select columns…', true)}
+                </div>
+            </div>
+            <div class="struct-form-row" style="margin-top:10px">
+                <div class="struct-form-group">
+                    <label>Ref. Database</label>
+                    <select class="tbl-input tbl-select" id="fk-ref-db">
+                        <option value="${escAttr(dbName)}" selected>${escHtml(dbName)}</option>
+                    </select>
+                </div>
+                <div class="struct-form-group">
+                    <label>Ref. Table</label>
+                    <select class="tbl-input tbl-select" id="fk-ref-table">
+                        <option value="">— select table —</option>
+                    </select>
+                </div>
+                <div class="struct-form-group">
+                    <label>Ref. Column(s)</label>
+                    ${makeColPicker('fk-ref-cols', [], 'Select ref. table first…', true)}
+                </div>
+            </div>
+            <div class="struct-form-row" style="margin-top:10px">
+                <div class="struct-form-group">
+                    <label>On Update</label>
+                    <select class="tbl-input tbl-select" id="fk-on-update">${ruleOpts}</select>
+                </div>
+                <div class="struct-form-group">
+                    <label>On Delete</label>
+                    <select class="tbl-input tbl-select" id="fk-on-delete">${ruleOpts}</select>
+                </div>
+                <div class="struct-form-group struct-form-btn">
+                    <button class="btn btn-accent btn-sm" id="fk-add-btn">Add Foreign Key</button>
+                </div>
+            </div>
+            <div id="fk-error" class="error-msg hidden" style="margin-top:8px"></div>
+        </div>
+    `;
+
+    wireColPicker(container, 'fk-cols');
+    wireColPicker(container, 'fk-ref-cols');
+
+    const refDbSel    = container.querySelector('#fk-ref-db')    as HTMLSelectElement;
+    const refTableSel = container.querySelector('#fk-ref-table') as HTMLSelectElement;
+
+    const loadRefCols = async () => {
+        const refTable = refTableSel.value;
+        const refDb    = refDbSel.value || dbName;
+        if (!refTable) { setColPickerCols(container, 'fk-ref-cols', []); return; }
+        try {
+            const data = await api('table_structure', { database: refDb, table: refTable });
+            setColPickerCols(container, 'fk-ref-cols', (data.structure || []).map((r: any) => r.Field as string));
+        } catch {
+            setColPickerCols(container, 'fk-ref-cols', []);
+        }
+    };
+
+    const loadRefTables = async () => {
+        const refDb = refDbSel.value || dbName;
+        refTableSel.innerHTML = '<option value="">— loading… —</option>';
+        setColPickerCols(container, 'fk-ref-cols', []);
+        try {
+            const data = await api('tables', { database: refDb });
+            const tables: string[] = (data.tables || []).map((t: any) => t.name as string);
+            refTableSel.innerHTML = '<option value="">— select table —</option>' +
+                tables.map(t => `<option value="${escAttr(t)}">${escHtml(t)}</option>`).join('');
+        } catch {
+            refTableSel.innerHTML = '<option value="">— error loading tables —</option>';
+        }
+    };
+
+    // Populate databases list
+    api('databases').then((data: any) => {
+        const dbs: string[] = (data.databases || []).map((d: any) => d.name as string);
+        refDbSel.innerHTML = dbs.map(d =>
+            `<option value="${escAttr(d)}"${d === dbName ? ' selected' : ''}>${escHtml(d)}</option>`
+        ).join('');
+        loadRefTables();
+    });
+
+    refDbSel.addEventListener('change', loadRefTables);
+    refTableSel.addEventListener('change', loadRefCols);
+
+    container.querySelectorAll('.fk-drop-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const name = (btn as HTMLElement).dataset.name!;
+            if (!confirm(`Drop foreign key "${name}"?`)) return;
+            try {
+                await api('foreign_keys', { action: 'drop', database: dbName, table: tableName, name });
+                toast(`Foreign key "${name}" dropped`, 'success');
+                const fresh = await api('table_structure', { database: dbName, table: tableName });
+                renderForeignKeysTab(container, dbName, tableName, fresh.foreign_keys || [], fresh.indexes || [], tableCols);
+            } catch (err: any) { toast('Error: ' + err.message, 'error'); }
+        });
+    });
+
+    container.querySelector('#fk-add-btn')!.addEventListener('click', async () => {
+        const name     = (container.querySelector('#fk-name')      as HTMLInputElement).value.trim();
+        const cols     = getColPickerValues(container, 'fk-cols');
+        const refDb    = (container.querySelector('#fk-ref-db')    as HTMLSelectElement).value || dbName;
+        const refTable = (container.querySelector('#fk-ref-table') as HTMLSelectElement).value;
+        const refCols  = getColPickerValues(container, 'fk-ref-cols');
+        const onUpdate = (container.querySelector('#fk-on-update') as HTMLSelectElement).value;
+        const onDelete = (container.querySelector('#fk-on-delete') as HTMLSelectElement).value;
+        const errEl    = container.querySelector('#fk-error')!;
+
+        if (!cols.length || !refTable || !refCols.length) {
+            errEl.textContent = 'Column, ref. table and ref. column are required';
+            errEl.classList.remove('hidden'); return;
+        }
+        errEl.classList.add('hidden');
+
+        const btn = container.querySelector('#fk-add-btn') as HTMLButtonElement;
+        btn.disabled = true; btn.textContent = 'Adding…';
+        try {
+            await api('foreign_keys', { action: 'add', database: dbName, table: tableName, name, columns: cols, ref_db: refDb, ref_table: refTable, ref_cols: refCols, on_update: onUpdate, on_delete: onDelete });
+            toast('Foreign key added', 'success');
+            const fresh = await api('table_structure', { database: dbName, table: tableName });
+            renderForeignKeysTab(container, dbName, tableName, fresh.foreign_keys || [], fresh.indexes || [], tableCols);
+        } catch (err: any) {
+            errEl.textContent = err.message; errEl.classList.remove('hidden');
+            btn.disabled = false; btn.textContent = 'Add Foreign Key';
+        }
+    });
 }
 
 // ── Structure editor ──────────────────────────────────────────────────────────
@@ -144,10 +479,7 @@ function parseColumnDef(row: any): ColumnDef {
         originalName:  row.Field,
         name:          row.Field,
         baseType:      baseType || 'VARCHAR',
-        length,
-        decimals,
-        enumValues,
-        unsigned,
+        length, decimals, enumValues, unsigned,
         allowNull:     row.Null === 'YES',
         defaultType:   row.Default === null ? 'NULL' : row.Default === '' ? 'EMPTY' : row.Default === 'CURRENT_TIMESTAMP' ? 'CURRENT_TIMESTAMP' : 'VALUE',
         defaultValue:  (row.Default !== null && row.Default !== 'CURRENT_TIMESTAMP') ? String(row.Default) : '',
@@ -165,9 +497,7 @@ function collectEditorState(): Partial<ColumnDef>[] {
 
     rows.forEach(tr => {
         const get = (sel: string) => tr.querySelector(sel);
-
         const baseType = (get('.col-type') as HTMLSelectElement).value.toUpperCase();
-
         let defaultVal: string | null = null;
         const defType = (get('.col-default-type') as HTMLSelectElement | null)?.value;
         if (defType === 'VALUE')             defaultVal = (get('.col-default-value') as HTMLInputElement | null)?.value ?? '';
@@ -232,16 +562,9 @@ function renderStructure(container: HTMLElement, columns: ColumnDef[], editMode:
                 <thead>
                     <tr>
                         <th class="col-drag-th"></th>
-                        <th>Field</th>
-                        <th>Type</th>
-                        <th>Length / Values</th>
-                        <th>Collation</th>
-                        <th>Unsigned</th>
-                        <th>Allow NULL</th>
-                        <th>Default</th>
-                        <th>A_I</th>
-                        <th>Key</th>
-                        <th></th>
+                        <th>Field</th><th>Type</th><th>Length / Values</th>
+                        <th>Collation</th><th>Unsigned</th><th>Allow NULL</th>
+                        <th>Default</th><th>A_I</th><th>Key</th><th></th>
                     </tr>
                 </thead>
                 <tbody id="struct-editor-body">
@@ -299,9 +622,7 @@ function buildEditorRow(col: Partial<ColumnDef>, idx: number): string {
             </svg>
         </td>
         <td><input class="col-name tbl-input" value="${escAttr(col.name || '')}" style="width:120px"></td>
-        <td>
-            <select class="col-type tbl-input tbl-select" style="width:130px">${typeOptions}</select>
-        </td>
+        <td><select class="col-type tbl-input tbl-select" style="width:130px">${typeOptions}</select></td>
         <td class="col-extra-cell">
             <span class="col-len-wrap"${showLen ? '' : ' style="display:none"'}>
                 <input class="col-length tbl-input" value="${escAttr(col.length || '')}" placeholder="Length" style="width:70px">
@@ -397,7 +718,6 @@ function wireEditorEvents(container: HTMLElement, columns: Partial<ColumnDef>[],
     tbody.addEventListener('change', (e: Event) => {
         const tr = (e.target as Element).closest('tr[data-idx]') as HTMLElement | null;
         if (!tr) return;
-
         if ((e.target as Element).classList.contains('col-type')) {
             updateRowVisibility(tr, (e.target as HTMLSelectElement).value.toUpperCase());
         }
@@ -434,10 +754,7 @@ function wireEditorEvents(container: HTMLElement, columns: Partial<ColumnDef>[],
     let dragSrc: HTMLElement | null = null;
     tbody.addEventListener('dragstart', (e: DragEvent) => {
         dragSrc = (e.target as Element).closest('tr[data-idx]') as HTMLElement | null;
-        if (dragSrc) {
-            dragSrc.classList.add('dragging');
-            e.dataTransfer!.effectAllowed = 'move';
-        }
+        if (dragSrc) { dragSrc.classList.add('dragging'); e.dataTransfer!.effectAllowed = 'move'; }
     });
     tbody.addEventListener('dragover', (e: DragEvent) => {
         e.preventDefault();
@@ -457,8 +774,7 @@ function wireEditorEvents(container: HTMLElement, columns: Partial<ColumnDef>[],
         const target = (e.target as Element).closest('tr[data-idx]') as HTMLElement | null;
         tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom', 'dragging'));
         if (!target || !dragSrc || target === dragSrc) return;
-        const rect  = target.getBoundingClientRect();
-        const after = e.clientY > rect.top + rect.height / 2;
+        const after = e.clientY > target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2;
         if (after) target.after(dragSrc); else target.before(dragSrc);
         reindexRows(tbody);
     });
@@ -506,8 +822,7 @@ function updateRowVisibility(tr: HTMLElement, type: string): void {
                     existing.insertAdjacentHTML('beforeend', '<option value="CURRENT_TIMESTAMP">CURRENT_TIMESTAMP</option>');
                 }
             } else {
-                const opt = existing.querySelector('option[value="CURRENT_TIMESTAMP"]');
-                if (opt) opt.remove();
+                existing.querySelector('option[value="CURRENT_TIMESTAMP"]')?.remove();
             }
         }
     }

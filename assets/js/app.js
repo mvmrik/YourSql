@@ -149,25 +149,47 @@ const THEMES = {
     },
 };
 const THEME_STORAGE_KEY = 'yoursql_theme';
-const THEME_CUSTOM_KEY = 'yoursql_custom_vars';
-function applyTheme(themeId, customVars = {}) {
-    const theme = THEMES[themeId] || THEMES['dark-blue'];
-    const vars = Object.assign(Object.assign({}, theme.vars), customVars);
+// All configurable CSS variables shown in the color editor
+const CUSTOM_COLORS = [
+    { key: '--bg', label: 'Background' },
+    { key: '--bg-2', label: 'Sidebar / panels' },
+    { key: '--bg-3', label: 'Inputs / table rows' },
+    { key: '--bg-4', label: 'Hover / subtle bg' },
+    { key: '--border', label: 'Border' },
+    { key: '--border-light', label: 'Border light' },
+    { key: '--accent', label: 'Accent' },
+    { key: '--accent-hover', label: 'Accent hover' },
+    { key: '--text', label: 'Text' },
+    { key: '--text-muted', label: 'Text muted' },
+    { key: '--text-dim', label: 'Text dim' },
+    { key: '--color-str', label: 'String values' },
+    { key: '--color-num', label: 'Number values' },
+    { key: '--color-date', label: 'Date values' },
+];
+// ── Apply theme to :root ───────────────────────────────────────────────────────
+function applyThemeVars(vars) {
     const root = document.documentElement;
     Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
 }
-function loadSavedTheme() {
-    const themeId = localStorage.getItem(THEME_STORAGE_KEY) || 'light';
-    const customRaw = localStorage.getItem(THEME_CUSTOM_KEY);
-    const custom = customRaw ? JSON.parse(customRaw) : {};
-    applyTheme(themeId, custom);
+function applyTheme(themeId, overrides = {}) {
+    const base = THEMES[themeId] || THEMES['dark-blue'];
+    applyThemeVars(Object.assign(Object.assign({}, base.vars), overrides));
 }
-function saveTheme(themeId, customVars) {
-    localStorage.setItem(THEME_STORAGE_KEY, themeId);
-    localStorage.setItem(THEME_CUSTOM_KEY, JSON.stringify(customVars));
+// ── Startup: apply saved theme or server-injected custom theme ─────────────────
+function loadSavedTheme() {
+    // If server injected a custom theme, it's already in CSS via <style id="server-theme">.
+    // We still call applyThemeVars so JS-driven changes (live preview) override cleanly.
+    if (window.__serverTheme) {
+        const st = window.__serverTheme;
+        const base = THEMES[st.base] || THEMES['dark-blue'];
+        applyThemeVars(Object.assign(Object.assign({}, base.vars), st.vars));
+        return;
+    }
+    const themeId = localStorage.getItem(THEME_STORAGE_KEY) || 'dark-blue';
+    applyTheme(themeId);
 }
 loadSavedTheme();
-// ── Settings modal ────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 function cssColorToHex(color) {
     if (!color)
         return '#000000';
@@ -184,116 +206,203 @@ function cssColorToHex(color) {
     }
     return '#000000';
 }
+// ── Settings modal ─────────────────────────────────────────────────────────────
 function openSettings() {
     if (document.getElementById('settings-overlay'))
         return;
-    const themeId = localStorage.getItem(THEME_STORAGE_KEY) || 'light';
-    const customRaw = localStorage.getItem(THEME_CUSTOM_KEY);
-    let custom = customRaw ? JSON.parse(customRaw) : {};
-    const CUSTOM_COLORS = [
-        { key: '--accent', label: 'Accent color' },
-        { key: '--bg', label: 'Background' },
-        { key: '--bg-2', label: 'Sidebar / panels' },
-        { key: '--bg-3', label: 'Inputs' },
-        { key: '--text', label: 'Text' },
-        { key: '--text-muted', label: 'Text muted' },
-        { key: '--border', label: 'Border' },
-        { key: '--color-str', label: 'Text values' },
-        { key: '--color-num', label: 'Number values' },
-        { key: '--color-date', label: 'Date values' },
-    ];
-    const themeButtons = Object.entries(THEMES).map(([id, t]) => `
-        <button class="theme-btn${id === themeId ? ' active' : ''}" data-theme="${id}">
-            <span class="theme-swatch" style="
-                background: linear-gradient(135deg, ${t.vars['--bg-2']} 50%, ${t.vars['--accent']} 50%);
-                border-color: ${t.vars['--border-light']};
-            "></span>
-            ${escHtml(t.label)}
-        </button>
-    `).join('');
+    // Determine active theme: server custom > localStorage > default
+    const serverTheme = window.__serverTheme;
+    const hasCustom = !!serverTheme;
+    const activeTheme = hasCustom ? (serverTheme.base || 'dark-blue') : (localStorage.getItem(THEME_STORAGE_KEY) || 'dark-blue');
+    // Current vars for pickers: merge base + server overrides
+    function getActiveVars(themeId, customOverrides = {}) {
+        return Object.assign(Object.assign({}, (THEMES[themeId] || THEMES['dark-blue']).vars), customOverrides);
+    }
+    let currentTheme = activeTheme;
+    let currentCustom = hasCustom ? Object.assign({}, serverTheme.vars) : {};
+    let isCustomActive = hasCustom;
     const overlay = document.createElement('div');
     overlay.id = 'settings-overlay';
-    overlay.innerHTML = `
-        <div class="settings-modal" id="settings-modal">
-            <div class="rem-header">
-                <span class="rem-title">Settings</span>
-                <button class="rem-close" id="settings-close">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z"/>
-                    </svg>
-                </button>
-            </div>
-            <div class="rem-body">
-                <div class="settings-section-title">Theme</div>
-                <div class="theme-grid" id="theme-grid">${themeButtons}</div>
-
-                <div class="settings-section-title" style="margin-top:18px">Custom colors
-                    <button class="settings-reset-btn" id="settings-reset">Reset to theme defaults</button>
-                </div>
-                <div class="custom-colors-grid">
-                    ${CUSTOM_COLORS.map(c => {
-        const theme = THEMES[themeId] || THEMES['dark-blue'];
-        const val = custom[c.key] || theme.vars[c.key] || '#000000';
-        const hex = cssColorToHex(val);
-        return `
-                        <div class="custom-color-row">
-                            <label class="custom-color-label">${escHtml(c.label)}</label>
-                            <div class="custom-color-right">
-                                <input type="color" class="color-picker" data-var="${c.key}" value="${hex}">
-                                <span class="color-val">${val}</span>
-                            </div>
-                        </div>`;
-    }).join('')}
-                </div>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-    let currentTheme = themeId;
-    let currentCustom = Object.assign({}, custom);
-    function rerender() {
-        applyTheme(currentTheme, currentCustom);
-        saveTheme(currentTheme, currentCustom);
+    function buildThemeButtons() {
+        const btns = Object.entries(THEMES).map(([id, t]) => `
+            <button class="theme-btn${!isCustomActive && id === currentTheme ? ' active' : ''}" data-theme="${id}">
+                <span class="theme-swatch" style="
+                    background: linear-gradient(135deg, ${t.vars['--bg-2']} 50%, ${t.vars['--accent']} 50%);
+                    border-color: ${t.vars['--border-light']};
+                "></span>
+                ${escHtml(t.label)}
+            </button>
+        `).join('');
+        const customSwatch = isCustomActive
+            ? (() => {
+                const v = getActiveVars(currentTheme, currentCustom);
+                return `background: linear-gradient(135deg, ${v['--bg-2'] || '#222'} 50%, ${v['--accent'] || '#4f8ef7'} 50%); border-color: ${v['--border-light'] || '#444'};`;
+            })()
+            : 'background: linear-gradient(135deg, #1a1a2e 50%, #e94560 50%); border-color: #444;';
+        const customBtn = `
+            <button class="theme-btn${isCustomActive ? ' active' : ''}" id="theme-btn-custom" data-theme="__custom__">
+                <span class="theme-swatch" style="${customSwatch}"></span>
+                Custom
+                ${isCustomActive ? '<span class="theme-custom-badge">saved</span>' : ''}
+            </button>
+        `;
+        return btns + customBtn;
     }
-    overlay.querySelectorAll('.theme-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            overlay.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            currentTheme = btn.dataset.theme;
+    function buildColorPickers() {
+        const vars = getActiveVars(currentTheme, currentCustom);
+        return CUSTOM_COLORS.map(c => {
+            const val = vars[c.key] || '#000000';
+            const hex = cssColorToHex(val);
+            return `
+            <div class="custom-color-row">
+                <label class="custom-color-label">${escHtml(c.label)}</label>
+                <div class="custom-color-right">
+                    <input type="color" class="color-picker" data-var="${c.key}" value="${hex}">
+                    <span class="color-val">${escHtml(val)}</span>
+                </div>
+            </div>`;
+        }).join('');
+    }
+    function renderModal() {
+        overlay.innerHTML = `
+            <div class="settings-modal" id="settings-modal">
+                <div class="rem-header">
+                    <span class="rem-title">Settings</span>
+                    <button class="rem-close" id="settings-close">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="rem-body">
+                    <div class="settings-section-title">Theme</div>
+                    <div class="theme-grid" id="theme-grid">${buildThemeButtons()}</div>
+
+                    <div class="settings-section-title" style="margin-top:18px;display:flex;align-items:center;gap:10px">
+                        <span>Colors</span>
+                        <button class="settings-reset-btn" id="settings-reset">Reset to theme defaults</button>
+                    </div>
+                    <div class="custom-colors-grid" id="colors-grid">${buildColorPickers()}</div>
+
+                    <div class="settings-custom-actions">
+                        <button class="btn btn-accent btn-sm" id="btn-save-custom">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="margin-right:4px">
+                                <path d="M2 1a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4.5L10.5 1H2zm5 11a3 3 0 110-6 3 3 0 010 6zM3 3h6v2H3V3z"/>
+                            </svg>
+                            Save Custom Theme
+                        </button>
+                        ${isCustomActive ? `
+                        <button class="btn btn-danger btn-sm" id="btn-delete-custom">
+                            Delete Custom Theme
+                        </button>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        bindEvents();
+    }
+    function bindEvents() {
+        overlay.querySelector('#settings-close').addEventListener('click', closeSettings);
+        // Theme buttons
+        overlay.querySelectorAll('.theme-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.theme;
+                if (id === '__custom__') {
+                    if (!isCustomActive)
+                        return;
+                    // Re-activate saved custom
+                    currentTheme = (serverTheme === null || serverTheme === void 0 ? void 0 : serverTheme.base) || 'dark-blue';
+                    currentCustom = Object.assign({}, ((serverTheme === null || serverTheme === void 0 ? void 0 : serverTheme.vars) || {}));
+                    isCustomActive = true;
+                }
+                else {
+                    currentTheme = id;
+                    currentCustom = {};
+                    isCustomActive = false;
+                    localStorage.setItem(THEME_STORAGE_KEY, id);
+                }
+                applyTheme(currentTheme, currentCustom);
+                renderModal();
+            });
+        });
+        // Color pickers — live preview
+        overlay.querySelectorAll('.color-picker').forEach(p => {
+            const picker = p;
+            picker.addEventListener('input', () => {
+                currentCustom[picker.dataset.var] = picker.value;
+                picker.closest('.custom-color-row').querySelector('.color-val').textContent = picker.value;
+                applyTheme(currentTheme, currentCustom);
+            });
+        });
+        // Reset to current theme defaults
+        overlay.querySelector('#settings-reset').addEventListener('click', () => {
             currentCustom = {};
-            const themeVars = THEMES[currentTheme].vars;
+            applyTheme(currentTheme);
+            const themeVars = (THEMES[currentTheme] || THEMES['dark-blue']).vars;
             overlay.querySelectorAll('.color-picker').forEach(p => {
                 const picker = p;
                 const val = themeVars[picker.dataset.var] || '#000000';
                 picker.value = cssColorToHex(val);
                 picker.closest('.custom-color-row').querySelector('.color-val').textContent = val;
             });
-            rerender();
         });
-    });
-    overlay.querySelectorAll('.color-picker').forEach(p => {
-        const picker = p;
-        picker.addEventListener('input', () => {
-            currentCustom[picker.dataset.var] = picker.value;
-            picker.closest('.custom-color-row').querySelector('.color-val').textContent = picker.value;
-            rerender();
+        // Save custom theme to server
+        overlay.querySelector('#btn-save-custom').addEventListener('click', async () => {
+            const btn = overlay.querySelector('#btn-save-custom');
+            btn.disabled = true;
+            btn.textContent = 'Saving…';
+            try {
+                await api('settings', {
+                    action: 'set',
+                    pairs: {
+                        custom_theme_vars: JSON.stringify(currentCustom),
+                        custom_theme_base: currentTheme,
+                    },
+                });
+                // Update window.__serverTheme so re-renders are consistent
+                window.__serverTheme = { vars: Object.assign({}, currentCustom), base: currentTheme };
+                isCustomActive = true;
+                toast('Custom theme saved', 'success');
+                renderModal();
+            }
+            catch (err) {
+                toast('Error: ' + err.message, 'error');
+                btn.disabled = false;
+                btn.textContent = 'Save Custom Theme';
+            }
         });
-    });
-    overlay.querySelector('#settings-reset').addEventListener('click', () => {
-        currentCustom = {};
-        const themeVars = THEMES[currentTheme].vars;
-        overlay.querySelectorAll('.color-picker').forEach(p => {
-            const picker = p;
-            const val = themeVars[picker.dataset.var] || '#000000';
-            picker.value = cssColorToHex(val);
-            picker.closest('.custom-color-row').querySelector('.color-val').textContent = val;
-        });
-        rerender();
-    });
+        // Delete custom theme
+        const delBtn = overlay.querySelector('#btn-delete-custom');
+        if (delBtn) {
+            delBtn.addEventListener('click', async () => {
+                delBtn.disabled = true;
+                try {
+                    await api('settings', {
+                        action: 'delete',
+                        keys: ['custom_theme_vars', 'custom_theme_base'],
+                    });
+                    window.__serverTheme = null;
+                    isCustomActive = false;
+                    currentCustom = {};
+                    // Fall back to localStorage theme
+                    const saved = localStorage.getItem(THEME_STORAGE_KEY) || 'dark-blue';
+                    currentTheme = saved;
+                    applyTheme(currentTheme);
+                    toast('Custom theme deleted', 'success');
+                    renderModal();
+                }
+                catch (err) {
+                    toast('Error: ' + err.message, 'error');
+                    delBtn.disabled = false;
+                }
+            });
+        }
+    }
     function closeSettings() { overlay.remove(); }
-    overlay.querySelector('#settings-close').addEventListener('click', closeSettings);
     overlay.addEventListener('click', (e) => { if (e.target === overlay)
         closeSettings(); });
+    document.body.appendChild(overlay);
+    renderModal();
 }
 document.getElementById('btn-settings').addEventListener('click', openSettings);
 // ── Tab management ────────────────────────────────────────────────────────────
@@ -301,6 +410,48 @@ let _tabCounter = 0;
 function generateTabId() {
     return 'tab-' + (++_tabCounter);
 }
+// ── Persist tabs to localStorage ──────────────────────────────────────────────
+const TABS_STORAGE_KEY = 'yoursql_tabs';
+function persistTabs() {
+    var _a, _b, _c, _d;
+    const data = {
+        tabs: state.tabs.map(t => ({ dbName: t.dbName, tableName: t.tableName })),
+        activeDb: (_b = (_a = state.tabs.find(t => t.id === state.activeTabId)) === null || _a === void 0 ? void 0 : _a.dbName) !== null && _b !== void 0 ? _b : null,
+        activeTable: (_d = (_c = state.tabs.find(t => t.id === state.activeTabId)) === null || _c === void 0 ? void 0 : _c.tableName) !== null && _d !== void 0 ? _d : null,
+    };
+    localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(data));
+}
+async function loadPersistedTabs() {
+    var _a;
+    try {
+        const raw = localStorage.getItem(TABS_STORAGE_KEY);
+        if (!raw)
+            return;
+        const data = JSON.parse(raw);
+        if (!Array.isArray(data.tabs) || !data.tabs.length)
+            return;
+        // Create ghost tabs (no data loaded yet)
+        data.tabs.forEach((t) => {
+            if (!findTab(t.dbName, t.tableName))
+                createTab(t.dbName, t.tableName);
+        });
+        // Activate the previously active tab and load its data
+        const activeTab = (_a = state.tabs.find(t => t.dbName === data.activeDb && t.tableName === data.activeTable)) !== null && _a !== void 0 ? _a : state.tabs[0];
+        if (activeTab) {
+            state.activeTabId = activeTab.id;
+            renderTabBar();
+            // Expand the DB in the sidebar and load its tables so the active
+            // table item can be rendered and marked as active
+            await expandSidebarToTable(activeTab.dbName, activeTab.tableName);
+            _restoringTab = true;
+            loadTableData(activeTab.dbName, activeTab.tableName, 1);
+        }
+    }
+    catch (_b) {
+        localStorage.removeItem(TABS_STORAGE_KEY);
+    }
+}
+// ── Tab state ─────────────────────────────────────────────────────────────────
 function saveCurrentTabState() {
     if (!state.activeTabId || !state.currentTable)
         return;
@@ -341,6 +492,7 @@ function closeTab(tabId) {
     if (idx === -1)
         return;
     state.tabs.splice(idx, 1);
+    persistTabs();
     if (state.activeTabId === tabId) {
         state.activeTabId = null;
         if (state.tabs.length > 0) {
@@ -383,16 +535,95 @@ function restoreTab(tab) {
     state.sqlPanelOpen = tab.sqlPanelOpen;
     state.colMeta = Object.assign({}, tab.colMeta);
     state.selection = { mode: tab.selection.mode, pageRows: [...tab.selection.pageRows] };
-    // Restore sidebar active state before triggering load
-    document.querySelectorAll('.table-item.active').forEach(e => e.classList.remove('active'));
-    const tEl = document.querySelector(`.db-item[data-db="${CSS.escape(tab.dbName)}"] .table-item[data-table="${CSS.escape(tab.tableName)}"]`);
-    if (tEl)
-        tEl.classList.add('active');
+    persistTabs();
     renderTabBar();
-    // Re-fetch data to restore all live listeners (insert, edit, sort, pagination).
-    // State (filters, sort, page) is already restored above so the view looks identical.
+    expandSidebarToTable(tab.dbName, tab.tableName);
     _restoringTab = true;
     loadTableData(tab.dbName, tab.tableName, tab.page);
+}
+// ── Tab context menu ──────────────────────────────────────────────────────────
+function showTabContextMenu(e, tabId) {
+    e.preventDefault();
+    removeTabContextMenu();
+    const idx = state.tabs.findIndex(t => t.id === tabId);
+    const hasOthers = state.tabs.length > 1;
+    const hasRight = idx < state.tabs.length - 1;
+    const menu = document.createElement('div');
+    menu.id = 'tab-context-menu';
+    menu.className = 'tab-context-menu';
+    menu.innerHTML = `
+        <div class="tab-ctx-item" data-action="close">Close</div>
+        <div class="tab-ctx-item${hasOthers ? '' : ' disabled'}" data-action="close-others">Close Others</div>
+        <div class="tab-ctx-item${hasRight ? '' : ' disabled'}" data-action="close-right">Close to the Right</div>
+        <div class="tab-ctx-divider"></div>
+        <div class="tab-ctx-item" data-action="close-all">Close All</div>
+    `;
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+    document.body.appendChild(menu);
+    menu.querySelectorAll('.tab-ctx-item:not(.disabled)').forEach(item => {
+        item.addEventListener('click', () => {
+            const action = item.dataset.action;
+            removeTabContextMenu();
+            if (action === 'close') {
+                closeTab(tabId);
+            }
+            else if (action === 'close-others') {
+                state.tabs.filter(t => t.id !== tabId).map(t => t.id).forEach(id => closeTab(id));
+            }
+            else if (action === 'close-right') {
+                state.tabs.slice(idx + 1).map(t => t.id).forEach(id => closeTab(id));
+            }
+            else if (action === 'close-all') {
+                [...state.tabs].map(t => t.id).forEach(id => closeTab(id));
+            }
+        });
+    });
+    setTimeout(() => document.addEventListener('click', removeTabContextMenu, { once: true }), 0);
+}
+function removeTabContextMenu() {
+    var _a;
+    (_a = document.getElementById('tab-context-menu')) === null || _a === void 0 ? void 0 : _a.remove();
+}
+// ── Drag & drop ───────────────────────────────────────────────────────────────
+let _dragTabId = null;
+function setupTabDrag(el, tabId) {
+    el.draggable = true;
+    el.addEventListener('dragstart', (e) => {
+        _dragTabId = tabId;
+        el.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    });
+    el.addEventListener('dragend', () => {
+        el.classList.remove('dragging');
+        document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('drag-over'));
+        _dragTabId = null;
+    });
+    el.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (!_dragTabId || _dragTabId === tabId)
+            return;
+        e.dataTransfer.dropEffect = 'move';
+        document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('drag-over'));
+        el.classList.add('drag-over');
+    });
+    el.addEventListener('dragleave', () => {
+        el.classList.remove('drag-over');
+    });
+    el.addEventListener('drop', (e) => {
+        e.preventDefault();
+        el.classList.remove('drag-over');
+        if (!_dragTabId || _dragTabId === tabId)
+            return;
+        const fromIdx = state.tabs.findIndex(t => t.id === _dragTabId);
+        const toIdx = state.tabs.findIndex(t => t.id === tabId);
+        if (fromIdx === -1 || toIdx === -1)
+            return;
+        const [moved] = state.tabs.splice(fromIdx, 1);
+        state.tabs.splice(toIdx, 0, moved);
+        persistTabs();
+        renderTabBar();
+    });
 }
 // ── Tab bar rendering ─────────────────────────────────────────────────────────
 function renderTabBar() {
@@ -414,16 +645,20 @@ function renderTabBar() {
         </div>
     `).join('');
     bar.querySelectorAll('.tab-item').forEach(el => {
+        const tabId = el.dataset.tabId;
         el.addEventListener('click', (e) => {
             if (e.target.classList.contains('tab-close'))
                 return;
-            const tabId = el.dataset.tabId;
             if (tabId === state.activeTabId)
                 return;
             saveCurrentTabState();
             const tab = state.tabs.find(t => t.id === tabId);
             restoreTab(tab);
         });
+        el.addEventListener('contextmenu', (e) => {
+            showTabContextMenu(e, tabId);
+        });
+        setupTabDrag(el, tabId);
     });
     bar.querySelectorAll('.tab-close').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -442,6 +677,7 @@ function tabsBeforeLoad(dbName, tableName) {
     if (!tab)
         tab = createTab(dbName, tableName);
     state.activeTabId = tab.id;
+    persistTabs();
     renderTabBar();
     return { isExisting, tab };
 }
@@ -804,6 +1040,39 @@ function renderTables(container, dbName, tables) {
         });
         container.appendChild(el);
     });
+}
+// ── Expand sidebar to a specific table (used on tab restore) ──────────────────
+async function expandSidebarToTable(dbName, tableName) {
+    var _a;
+    const dbItem = document.querySelector(`.db-item[data-db="${CSS.escape(dbName)}"]`);
+    if (!dbItem)
+        return;
+    // Expand the DB item if not already open
+    if (!dbItem.classList.contains('open')) {
+        document.querySelectorAll('.db-item.open').forEach(el => el.classList.remove('open'));
+        dbItem.classList.add('open');
+        document.querySelectorAll('.db-header.active').forEach(e => e.classList.remove('active'));
+        (_a = dbItem.querySelector('.db-header')) === null || _a === void 0 ? void 0 : _a.classList.add('active');
+        updateSearchContext(dbName);
+        // Load tables if not yet loaded
+        const tablesEl = dbItem.querySelector('.db-tables');
+        if (!tablesEl.dataset.loaded) {
+            tablesEl.innerHTML = '<div class="loading-tree" style="padding-left:36px"><div class="spinner"></div></div>';
+            try {
+                const data = await api('tables', { database: dbName });
+                tablesEl.dataset.loaded = '1';
+                renderTables(tablesEl, dbName, data.tables || []);
+            }
+            catch (_b) {
+                tablesEl.innerHTML = '';
+            }
+        }
+    }
+    // Mark the table as active
+    document.querySelectorAll('.table-item.active').forEach(e => e.classList.remove('active'));
+    const tEl = dbItem.querySelector(`.table-item[data-table="${CSS.escape(tableName)}"]`);
+    if (tEl)
+        tEl.classList.add('active');
 }
 // ── Select database ───────────────────────────────────────────────────────────
 function selectDatabase(dbName) {
@@ -1197,6 +1466,97 @@ function runSearch() {
     });
     loadTableData(state.currentDb, state.currentTable, 1);
 }
+// ── Pinned columns ────────────────────────────────────────────────────────────
+const PINNED_STORAGE_KEY = 'yoursql_pinned';
+function pinnedKey(dbName, tableName) {
+    return dbName + '.' + tableName;
+}
+function getPinnedCols(dbName, tableName) {
+    try {
+        const raw = localStorage.getItem(PINNED_STORAGE_KEY);
+        if (!raw)
+            return [];
+        const all = JSON.parse(raw);
+        return all[pinnedKey(dbName, tableName)] || [];
+    }
+    catch (_a) {
+        return [];
+    }
+}
+function setPinnedCols(dbName, tableName, cols) {
+    try {
+        const raw = localStorage.getItem(PINNED_STORAGE_KEY);
+        const all = raw ? JSON.parse(raw) : {};
+        const key = pinnedKey(dbName, tableName);
+        if (cols.length === 0) {
+            delete all[key];
+        }
+        else {
+            all[key] = cols;
+        }
+        localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(all));
+    }
+    catch (_a) { }
+}
+function pinColumn(dbName, tableName, col) {
+    const pinned = getPinnedCols(dbName, tableName);
+    if (!pinned.includes(col)) {
+        setPinnedCols(dbName, tableName, [...pinned, col]);
+    }
+    loadTableData(dbName, tableName, state.page);
+}
+function unpinColumn(dbName, tableName, col) {
+    const pinned = getPinnedCols(dbName, tableName).filter(c => c !== col);
+    setPinnedCols(dbName, tableName, pinned);
+    loadTableData(dbName, tableName, state.page);
+}
+function unpinAllColumns(dbName, tableName) {
+    setPinnedCols(dbName, tableName, []);
+    loadTableData(dbName, tableName, state.page);
+}
+// Reorder columns array so pinned ones come first (preserving their pin order)
+function applyPinnedOrder(dbName, tableName, columns) {
+    const pinned = getPinnedCols(dbName, tableName).filter(c => columns.includes(c));
+    const rest = columns.filter(c => !pinned.includes(c));
+    return [...pinned, ...rest];
+}
+// ── Column context menu ───────────────────────────────────────────────────────
+function showColContextMenu(e, col, dbName, tableName) {
+    e.preventDefault();
+    removeColContextMenu();
+    const pinned = getPinnedCols(dbName, tableName);
+    const isPinned = pinned.includes(col);
+    const hasMany = pinned.length > 1;
+    const menu = document.createElement('div');
+    menu.id = 'col-context-menu';
+    menu.className = 'tab-context-menu';
+    menu.innerHTML = `
+        ${!isPinned ? `<div class="tab-ctx-item" data-action="pin">Pin column</div>` : ''}
+        ${isPinned ? `<div class="tab-ctx-item" data-action="unpin">Unpin column</div>` : ''}
+        ${hasMany ? `<div class="tab-ctx-divider"></div>
+                       <div class="tab-ctx-item" data-action="unpin-all">Unpin All</div>` : ''}
+    `;
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+    document.body.appendChild(menu);
+    menu.querySelectorAll('.tab-ctx-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const action = item.dataset.action;
+            removeColContextMenu();
+            if (action === 'pin')
+                pinColumn(dbName, tableName, col);
+            if (action === 'unpin')
+                unpinColumn(dbName, tableName, col);
+            if (action === 'unpin-all')
+                unpinAllColumns(dbName, tableName);
+        });
+    });
+    setTimeout(() => document.addEventListener('click', removeColContextMenu, { once: true }), 0);
+}
+function removeColContextMenu() {
+    var _a;
+    (_a = document.getElementById('col-context-menu')) === null || _a === void 0 ? void 0 : _a.remove();
+}
 // ── Table data ────────────────────────────────────────────────────────────────
 async function loadTableData(dbName, tableName, page = 1, opts = {}) {
     const isNewTable = dbName !== state.currentDb || tableName !== state.currentTable;
@@ -1316,6 +1676,7 @@ async function loadTableData(dbName, tableName, page = 1, opts = {}) {
             });
             state.colMeta = cm;
             colMeta = cm;
+            setFkMeta(structRes.foreign_keys || []);
         }
         document.getElementById('table-loading').style.display = 'none';
         const content = document.getElementById('table-content');
@@ -1352,7 +1713,11 @@ function renderCellView(td, val) {
 }
 function renderTableData(container, data, colMeta = {}) {
     var _a, _b, _c;
-    const { columns, rows, total, page, page_size } = data;
+    const { rows, total, page, page_size } = data;
+    const dbName = state.currentDb;
+    const tableName = state.currentTable;
+    const columns = applyPinnedOrder(dbName, tableName, data.columns || []);
+    const pinned = getPinnedCols(dbName, tableName);
     if (!columns || !columns.length) {
         container.innerHTML = '<div class="table-empty">No columns found.</div>';
         return;
@@ -1386,7 +1751,8 @@ function renderTableData(container, data, colMeta = {}) {
     thRow.appendChild(thEdit);
     columns.forEach((c) => {
         const th = document.createElement('th');
-        th.className = 'th-sortable';
+        const isPinned = pinned.includes(c);
+        th.className = 'th-sortable' + (isPinned ? ' th-pinned' : '');
         const hasFilter = state.filters.some(f => f.col === c);
         const sortEntry = state.sort.find(s => s.col === c);
         const sortIdx = state.sort.findIndex(s => s.col === c);
@@ -1394,6 +1760,9 @@ function renderTableData(container, data, colMeta = {}) {
         label.className = 'th-label' + (hasFilter ? ' th-filtered' : '');
         label.textContent = c;
         label.addEventListener('click', () => addFilter(c));
+        label.addEventListener('contextmenu', (e) => {
+            showColContextMenu(e, c, dbName, tableName);
+        });
         const arrow = document.createElement('span');
         arrow.className = 'th-sort-btn' + (sortEntry ? ' th-sort-active' : '');
         arrow.title = sortEntry
@@ -1569,6 +1938,7 @@ function buildDataRow(row, columns, colMeta) {
         td.dataset.col = col;
         td.dataset.origVal = val === null ? '\x00NULL' : String(val);
         renderCellView(td, val);
+        renderFkIcon(td, col, val);
         td.addEventListener('dblclick', () => {
             var _a, _b, _c, _d, _e;
             const currentVal = (_c = (_b = (_a = td.closest('tr')) === null || _a === void 0 ? void 0 : _a._rowData) === null || _b === void 0 ? void 0 : _b[col]) !== null && _c !== void 0 ? _c : val;
@@ -1682,9 +2052,119 @@ function paginationRange(current, total) {
     pages.push(total);
     return pages;
 }
+// ── FK preview modal ──────────────────────────────────────────────────────────
+// fkMeta: array of FK definitions for the current table (from table_structure)
+// Each: { columns: string[], ref_db, ref_table, ref_cols }
+let _fkMeta = [];
+function setFkMeta(fks) {
+    _fkMeta = fks || [];
+}
+// Returns the FK definition for a given column, or null
+function getFkForCol(col) {
+    var _a;
+    return (_a = _fkMeta.find(fk => fk.columns.length === 1 && fk.columns[0] === col)) !== null && _a !== void 0 ? _a : null;
+}
+// Render a small FK link icon next to a cell value
+function renderFkIcon(td, col, val) {
+    const fk = getFkForCol(col);
+    if (!fk || val === null || val === undefined || val === '')
+        return;
+    const icon = document.createElement('span');
+    icon.className = 'fk-icon';
+    icon.title = `→ ${fk.ref_db !== state.currentDb ? fk.ref_db + '.' : ''}${fk.ref_table}.${fk.ref_cols[0]}`;
+    icon.innerHTML = `<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M4.715 6.542L3.343 7.914a3 3 0 104.243 4.243l1.828-1.829A3 3 0 008.586 5.5L8 6.086a1 1 0 00-.154.199 2 2 0 01.861 3.337L6.88 11.45a2 2 0 01-2.83-2.83l.793-.792a4 4 0 01-.128-1.287z"/>
+        <path d="M6.586 4.672A3 3 0 017.414 9.5l-.775.776a2 2 0 01.121 1.52 2 2 0 01-2.832-2.83l1.829-1.828a3 3 0 01-.121-1.52z" opacity=".5"/>
+    </svg>`;
+    icon.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showFkPreview(fk, val);
+    });
+    td.insertBefore(icon, td.firstChild);
+}
+async function showFkPreview(fk, val) {
+    removeFkPreviewModal();
+    const refLabel = (fk.ref_db !== state.currentDb ? fk.ref_db + '.' : '') + fk.ref_table;
+    const overlay = document.createElement('div');
+    overlay.id = 'fk-preview-modal';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+        <div class="row-edit-modal">
+            <div class="rem-header">
+                <span class="rem-title" style="display:flex;align-items:center;gap:7px">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" style="color:var(--accent);flex-shrink:0">
+                        <path d="M4.715 6.542L3.343 7.914a3 3 0 104.243 4.243l1.828-1.829A3 3 0 008.586 5.5L8 6.086a1 1 0 00-.154.199 2 2 0 01.861 3.337L6.88 11.45a2 2 0 01-2.83-2.83l.793-.792a4 4 0 01-.128-1.287z"/>
+                        <path d="M6.586 4.672A3 3 0 017.414 9.5l-.775.776a2 2 0 01.121 1.52 2 2 0 01-2.832-2.83l1.829-1.828a3 3 0 01-.121-1.52z" opacity=".5"/>
+                    </svg>
+                    ${escHtml(refLabel)}
+                    <span style="color:var(--text-muted);font-weight:400;font-size:.82rem">
+                        where ${escHtml(fk.ref_cols[0])} = ${escHtml(String(val))}
+                    </span>
+                </span>
+                <button class="rem-close" id="fk-preview-close">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="rem-body" id="fk-preview-body">
+                <div style="display:flex;gap:10px;color:var(--text-muted);align-items:center">
+                    <div class="spinner"></div> Loading…
+                </div>
+            </div>
+            <div class="rem-footer" id="fk-preview-footer" style="display:none">
+                <div style="flex:1"></div>
+                <button class="btn btn-default btn-sm" id="fk-go-btn">Open ${escHtml(refLabel)} →</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#fk-preview-close').addEventListener('click', removeFkPreviewModal);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay)
+        removeFkPreviewModal(); });
+    const body = overlay.querySelector('#fk-preview-body');
+    const footer = overlay.querySelector('#fk-preview-footer');
+    try {
+        const data = await api('fk_row', {
+            database: fk.ref_db,
+            table: fk.ref_table,
+            column: fk.ref_cols[0],
+            value: val,
+        });
+        const row = data.row;
+        body.innerHTML = '';
+        Object.entries(row).forEach(([k, v]) => {
+            const field = document.createElement('div');
+            field.className = 'rem-field';
+            const labelRow = document.createElement('div');
+            labelRow.className = 'rem-label-row';
+            labelRow.innerHTML = `<span class="rem-label">${escHtml(k)}</span>`;
+            const valueEl = document.createElement('div');
+            valueEl.className = 'tbl-input input-disabled' + (v === null ? ' null-val' : '');
+            valueEl.style.cssText = 'padding:6px 10px;min-height:34px;word-break:break-all;white-space:pre-wrap';
+            valueEl.textContent = v === null ? 'NULL' : String(v);
+            field.appendChild(labelRow);
+            field.appendChild(valueEl);
+            body.appendChild(field);
+        });
+        footer.style.display = 'flex';
+        overlay.querySelector('#fk-go-btn').addEventListener('click', () => {
+            removeFkPreviewModal();
+            loadTableData(fk.ref_db, fk.ref_table, 1);
+        });
+    }
+    catch (err) {
+        body.innerHTML = `<span style="color:var(--danger)">${escHtml(err.message)}</span>`;
+    }
+}
+function removeFkPreviewModal() {
+    var _a;
+    (_a = document.getElementById('fk-preview-modal')) === null || _a === void 0 ? void 0 : _a.remove();
+}
 // ── Disconnect ────────────────────────────────────────────────────────────────
 document.getElementById('btn-disconnect').addEventListener('click', async () => {
     await fetch('api/disconnect.php', { method: 'POST' });
+    localStorage.removeItem(TABS_STORAGE_KEY);
     window.location.href = 'index.php';
 });
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -1699,6 +2179,7 @@ async function init() {
             document.getElementById('server-user').textContent = data.username;
         }
         await loadDatabases();
+        loadPersistedTabs();
     }
     catch (err) {
         window.location.href = 'index.php';
@@ -2400,11 +2881,14 @@ async function loadTableStructure(dbName, tableName) {
     area.innerHTML = `
         <div class="table-view-header">
             <div class="table-view-title">${escHtml(tableName)} — Structure</div>
-            <div class="table-view-actions">
-                <button class="btn btn-accent btn-sm" id="struct-edit-btn">Edit</button>
-            </div>
+            <div class="table-view-actions" id="struct-header-actions"></div>
         </div>
-        <div id="struct-loading" style="display:flex;gap:10px;color:var(--text-muted);align-items:center">
+        <div class="struct-tabs">
+            <button class="struct-tab active" data-tab="columns">Columns</button>
+            <button class="struct-tab" data-tab="indexes">Indexes</button>
+            <button class="struct-tab" data-tab="foreign-keys">Foreign Keys</button>
+        </div>
+        <div id="struct-loading" style="display:flex;gap:10px;color:var(--text-muted);align-items:center;padding:8px 0">
             <div class="spinner"></div> Loading structure...
         </div>
         <div id="struct-content"></div>
@@ -2412,36 +2896,50 @@ async function loadTableStructure(dbName, tableName) {
     try {
         const data = await api('table_structure', { database: dbName, table: tableName });
         document.getElementById('struct-loading').style.display = 'none';
-        let editMode = false;
         let columns = (data.structure || []).map(parseColumnDef);
-        const render = () => renderStructure(document.getElementById('struct-content'), columns, editMode, (newCols) => { columns = newCols; });
-        render();
-        document.getElementById('struct-edit-btn').addEventListener('click', async () => {
+        const tableCols = (data.structure || []).map((r) => r.Field);
+        let activeTab = 'columns';
+        let editMode = false;
+        const headerActions = document.getElementById('struct-header-actions');
+        const renderEditBtn = () => {
+            headerActions.innerHTML = activeTab === 'columns'
+                ? `<button class="btn btn-accent btn-sm" id="struct-edit-btn">${editMode ? 'Save' : 'Edit'}</button>`
+                : '';
+            if (activeTab === 'columns') {
+                document.getElementById('struct-edit-btn').addEventListener('click', handleEditSave);
+                if (editMode)
+                    document.getElementById('struct-edit-btn').classList.add('saving');
+            }
+        };
+        const renderContent = () => {
+            const content = document.getElementById('struct-content');
+            if (activeTab === 'columns') {
+                renderStructure(content, columns, editMode, (newCols) => { columns = newCols; });
+            }
+            else if (activeTab === 'indexes') {
+                renderIndexesTab(content, dbName, tableName, data.indexes || [], tableCols);
+            }
+            else {
+                renderForeignKeysTab(content, dbName, tableName, data.foreign_keys || [], data.indexes || [], tableCols);
+            }
+            renderEditBtn();
+        };
+        const handleEditSave = async () => {
             if (!editMode) {
                 editMode = true;
-                const btn = document.getElementById('struct-edit-btn');
-                btn.textContent = 'Save';
-                btn.classList.add('saving');
-                render();
+                renderContent();
             }
             else {
                 const btn = document.getElementById('struct-edit-btn');
                 btn.disabled = true;
                 btn.textContent = 'Saving…';
                 try {
-                    await api('alter_table', {
-                        database: dbName,
-                        table: tableName,
-                        columns: collectEditorState(),
-                    });
+                    await api('alter_table', { database: dbName, table: tableName, columns: collectEditorState() });
                     toast('Structure saved successfully', 'success');
                     editMode = false;
                     const fresh = await api('table_structure', { database: dbName, table: tableName });
                     columns = (fresh.structure || []).map(parseColumnDef);
-                    btn.textContent = 'Edit';
-                    btn.disabled = false;
-                    btn.classList.remove('saving');
-                    render();
+                    renderContent();
                 }
                 catch (err) {
                     toast('Error: ' + err.message, 'error');
@@ -2449,12 +2947,334 @@ async function loadTableStructure(dbName, tableName) {
                     btn.disabled = false;
                 }
             }
+        };
+        area.querySelectorAll('.struct-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                if (editMode && activeTab === 'columns') {
+                    if (!confirm('Discard unsaved column changes?'))
+                        return;
+                    editMode = false;
+                }
+                area.querySelectorAll('.struct-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                activeTab = tab.dataset.tab;
+                renderContent();
+            });
         });
+        renderContent();
     }
     catch (err) {
         document.getElementById('struct-loading').innerHTML =
             `<span style="color:var(--danger)">${escHtml(err.message)}</span>`;
     }
+}
+// ── Column picker (multi-select dropdown with checkboxes) ─────────────────────
+function makeColPicker(id, cols, label, multi = true) {
+    return `
+        <div class="col-picker-wrap" id="${id}-wrap">
+            <button type="button" class="col-picker-btn tbl-input" id="${id}-btn">
+                <span class="col-picker-label">${escHtml(label)}</span>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" style="flex-shrink:0;opacity:.5"><path d="M1 3l4 4 4-4"/></svg>
+            </button>
+            <div class="col-picker-dropdown" id="${id}-drop">
+                ${cols.map(c => `
+                    <label class="col-picker-item">
+                        <input type="${multi ? 'checkbox' : 'radio'}" name="${id}-radio" value="${escAttr(c)}"> ${escHtml(c)}
+                    </label>`).join('')}
+            </div>
+        </div>`;
+}
+function wireColPicker(root, id) {
+    const btn = root.querySelector(`#${id}-btn`);
+    const drop = root.querySelector(`#${id}-drop`);
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = drop.classList.contains('open');
+        root.querySelectorAll('.col-picker-dropdown.open').forEach(d => d.classList.remove('open'));
+        if (!isOpen)
+            drop.classList.add('open');
+    });
+    drop.addEventListener('change', () => updateColPickerLabel(root, id));
+}
+function updateColPickerLabel(root, id) {
+    const checked = [...root.querySelectorAll(`#${id}-drop input:checked`)];
+    const label = root.querySelector(`#${id}-btn .col-picker-label`);
+    label.textContent = checked.length ? checked.map(c => c.value).join(', ') : 'Select columns…';
+}
+function getColPickerValues(root, id) {
+    return [...root.querySelectorAll(`#${id}-drop input:checked`)].map(i => i.value);
+}
+function setColPickerCols(root, id, cols) {
+    const drop = root.querySelector(`#${id}-drop`);
+    const isMulti = drop.querySelector('input[type="checkbox"]') !== null;
+    drop.innerHTML = cols.length
+        ? cols.map(c => `
+            <label class="col-picker-item">
+                <input type="${isMulti ? 'checkbox' : 'radio'}" name="${id}-radio" value="${escAttr(c)}"> ${escHtml(c)}
+            </label>`).join('')
+        : `<div class="col-picker-empty">No columns</div>`;
+    drop.addEventListener('change', () => updateColPickerLabel(root, id));
+    const label = root.querySelector(`#${id}-btn .col-picker-label`);
+    label.textContent = 'Select columns…';
+}
+// Close all pickers on outside click
+document.addEventListener('click', () => {
+    document.querySelectorAll('.col-picker-dropdown.open').forEach(d => d.classList.remove('open'));
+});
+// ── Indexes tab ───────────────────────────────────────────────────────────────
+function renderIndexesTab(container, dbName, tableName, indexes, tableCols) {
+    container.innerHTML = `
+        <div class="data-table-wrap">
+            <table class="data-table">
+                <thead><tr>
+                    <th>Name</th><th>Type</th><th>Columns</th><th>Method</th><th></th>
+                </tr></thead>
+                <tbody>
+                    ${!indexes.length ? `<tr><td colspan="5" class="table-empty">No indexes</td></tr>` :
+        indexes.map(idx => `
+                        <tr>
+                            <td><strong>${escHtml(idx.name)}</strong></td>
+                            <td><span class="badge${idx.type === 'PRIMARY' ? ' blue' : idx.type === 'UNIQUE' ? ' green' : ''}">${escHtml(idx.type)}</span></td>
+                            <td style="font-family:var(--font-mono);font-size:.82rem">${escHtml(idx.columns.join(', '))}</td>
+                            <td style="color:var(--text-muted);font-size:.82rem">${escHtml(idx.method)}</td>
+                            <td>${idx.name !== 'PRIMARY' ? `<button class="btn btn-danger btn-sm idx-drop-btn" data-name="${escAttr(idx.name)}">Drop</button>` : ''}</td>
+                        </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+        <div class="struct-add-section">
+            <h4 class="struct-section-title">Add Index</h4>
+            <div class="struct-form-row">
+                <div class="struct-form-group">
+                    <label>Name <span class="optional">(auto if empty)</span></label>
+                    <input class="tbl-input" id="idx-name" placeholder="index_name">
+                </div>
+                <div class="struct-form-group">
+                    <label>Type</label>
+                    <select class="tbl-input tbl-select" id="idx-type">
+                        <option value="INDEX">INDEX</option>
+                        <option value="UNIQUE">UNIQUE</option>
+                        <option value="PRIMARY">PRIMARY</option>
+                        <option value="FULLTEXT">FULLTEXT</option>
+                    </select>
+                </div>
+                <div class="struct-form-group">
+                    <label>Columns</label>
+                    ${makeColPicker('idx-cols', tableCols, 'Select columns…', true)}
+                </div>
+                <div class="struct-form-group struct-form-btn">
+                    <button class="btn btn-accent btn-sm" id="idx-add-btn">Add Index</button>
+                </div>
+            </div>
+            <div id="idx-error" class="error-msg hidden" style="margin-top:8px"></div>
+        </div>
+    `;
+    wireColPicker(container, 'idx-cols');
+    container.querySelectorAll('.idx-drop-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const name = btn.dataset.name;
+            if (!confirm(`Drop index "${name}"?`))
+                return;
+            try {
+                await api('indexes', { action: 'drop', database: dbName, table: tableName, name });
+                toast(`Index "${name}" dropped`, 'success');
+                const fresh = await api('table_structure', { database: dbName, table: tableName });
+                renderIndexesTab(container, dbName, tableName, fresh.indexes || [], tableCols);
+            }
+            catch (err) {
+                toast('Error: ' + err.message, 'error');
+            }
+        });
+    });
+    container.querySelector('#idx-add-btn').addEventListener('click', async () => {
+        const name = container.querySelector('#idx-name').value.trim();
+        const type = container.querySelector('#idx-type').value;
+        const cols = getColPickerValues(container, 'idx-cols');
+        const errEl = container.querySelector('#idx-error');
+        if (!cols.length) {
+            errEl.textContent = 'Select at least one column';
+            errEl.classList.remove('hidden');
+            return;
+        }
+        errEl.classList.add('hidden');
+        const btn = container.querySelector('#idx-add-btn');
+        btn.disabled = true;
+        btn.textContent = 'Adding…';
+        try {
+            await api('indexes', { action: 'add', database: dbName, table: tableName, name, type, columns: cols });
+            toast('Index added', 'success');
+            const fresh = await api('table_structure', { database: dbName, table: tableName });
+            renderIndexesTab(container, dbName, tableName, fresh.indexes || [], tableCols);
+        }
+        catch (err) {
+            errEl.textContent = err.message;
+            errEl.classList.remove('hidden');
+            btn.disabled = false;
+            btn.textContent = 'Add Index';
+        }
+    });
+}
+// ── Foreign Keys tab ──────────────────────────────────────────────────────────
+function renderForeignKeysTab(container, dbName, tableName, fks, indexes, tableCols) {
+    const rules = ['RESTRICT', 'CASCADE', 'SET NULL', 'NO ACTION'];
+    const ruleOpts = rules.map(r => `<option value="${r}">${r}</option>`).join('');
+    container.innerHTML = `
+        <div class="data-table-wrap">
+            <table class="data-table">
+                <thead><tr>
+                    <th>Name</th><th>Columns</th><th>References</th><th>On Update</th><th>On Delete</th><th></th>
+                </tr></thead>
+                <tbody>
+                    ${!fks.length ? `<tr><td colspan="6" class="table-empty">No foreign keys</td></tr>` :
+        fks.map(fk => `
+                        <tr>
+                            <td><strong>${escHtml(fk.name)}</strong></td>
+                            <td style="font-family:var(--font-mono);font-size:.82rem">${escHtml(fk.columns.join(', '))}</td>
+                            <td style="font-family:var(--font-mono);font-size:.82rem">
+                                <span style="color:var(--accent)">${escHtml(fk.ref_db !== dbName ? fk.ref_db + '.' : '')}${escHtml(fk.ref_table)}</span>
+                                (${escHtml(fk.ref_cols.join(', '))})
+                            </td>
+                            <td><span class="badge">${escHtml(fk.on_update)}</span></td>
+                            <td><span class="badge">${escHtml(fk.on_delete)}</span></td>
+                            <td><button class="btn btn-danger btn-sm fk-drop-btn" data-name="${escAttr(fk.name)}">Drop</button></td>
+                        </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+        <div class="struct-add-section">
+            <h4 class="struct-section-title">Add Foreign Key</h4>
+            <div class="struct-form-row">
+                <div class="struct-form-group">
+                    <label>Name <span class="optional">(auto if empty)</span></label>
+                    <input class="tbl-input" id="fk-name" placeholder="fk_name">
+                </div>
+                <div class="struct-form-group">
+                    <label>Column(s)</label>
+                    ${makeColPicker('fk-cols', tableCols, 'Select columns…', true)}
+                </div>
+            </div>
+            <div class="struct-form-row" style="margin-top:10px">
+                <div class="struct-form-group">
+                    <label>Ref. Database</label>
+                    <select class="tbl-input tbl-select" id="fk-ref-db">
+                        <option value="${escAttr(dbName)}" selected>${escHtml(dbName)}</option>
+                    </select>
+                </div>
+                <div class="struct-form-group">
+                    <label>Ref. Table</label>
+                    <select class="tbl-input tbl-select" id="fk-ref-table">
+                        <option value="">— select table —</option>
+                    </select>
+                </div>
+                <div class="struct-form-group">
+                    <label>Ref. Column(s)</label>
+                    ${makeColPicker('fk-ref-cols', [], 'Select ref. table first…', true)}
+                </div>
+            </div>
+            <div class="struct-form-row" style="margin-top:10px">
+                <div class="struct-form-group">
+                    <label>On Update</label>
+                    <select class="tbl-input tbl-select" id="fk-on-update">${ruleOpts}</select>
+                </div>
+                <div class="struct-form-group">
+                    <label>On Delete</label>
+                    <select class="tbl-input tbl-select" id="fk-on-delete">${ruleOpts}</select>
+                </div>
+                <div class="struct-form-group struct-form-btn">
+                    <button class="btn btn-accent btn-sm" id="fk-add-btn">Add Foreign Key</button>
+                </div>
+            </div>
+            <div id="fk-error" class="error-msg hidden" style="margin-top:8px"></div>
+        </div>
+    `;
+    wireColPicker(container, 'fk-cols');
+    wireColPicker(container, 'fk-ref-cols');
+    const refDbSel = container.querySelector('#fk-ref-db');
+    const refTableSel = container.querySelector('#fk-ref-table');
+    const loadRefCols = async () => {
+        const refTable = refTableSel.value;
+        const refDb = refDbSel.value || dbName;
+        if (!refTable) {
+            setColPickerCols(container, 'fk-ref-cols', []);
+            return;
+        }
+        try {
+            const data = await api('table_structure', { database: refDb, table: refTable });
+            setColPickerCols(container, 'fk-ref-cols', (data.structure || []).map((r) => r.Field));
+        }
+        catch (_a) {
+            setColPickerCols(container, 'fk-ref-cols', []);
+        }
+    };
+    const loadRefTables = async () => {
+        const refDb = refDbSel.value || dbName;
+        refTableSel.innerHTML = '<option value="">— loading… —</option>';
+        setColPickerCols(container, 'fk-ref-cols', []);
+        try {
+            const data = await api('tables', { database: refDb });
+            const tables = (data.tables || []).map((t) => t.name);
+            refTableSel.innerHTML = '<option value="">— select table —</option>' +
+                tables.map(t => `<option value="${escAttr(t)}">${escHtml(t)}</option>`).join('');
+        }
+        catch (_a) {
+            refTableSel.innerHTML = '<option value="">— error loading tables —</option>';
+        }
+    };
+    // Populate databases list
+    api('databases').then((data) => {
+        const dbs = (data.databases || []).map((d) => d.name);
+        refDbSel.innerHTML = dbs.map(d => `<option value="${escAttr(d)}"${d === dbName ? ' selected' : ''}>${escHtml(d)}</option>`).join('');
+        loadRefTables();
+    });
+    refDbSel.addEventListener('change', loadRefTables);
+    refTableSel.addEventListener('change', loadRefCols);
+    container.querySelectorAll('.fk-drop-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const name = btn.dataset.name;
+            if (!confirm(`Drop foreign key "${name}"?`))
+                return;
+            try {
+                await api('foreign_keys', { action: 'drop', database: dbName, table: tableName, name });
+                toast(`Foreign key "${name}" dropped`, 'success');
+                const fresh = await api('table_structure', { database: dbName, table: tableName });
+                renderForeignKeysTab(container, dbName, tableName, fresh.foreign_keys || [], fresh.indexes || [], tableCols);
+            }
+            catch (err) {
+                toast('Error: ' + err.message, 'error');
+            }
+        });
+    });
+    container.querySelector('#fk-add-btn').addEventListener('click', async () => {
+        const name = container.querySelector('#fk-name').value.trim();
+        const cols = getColPickerValues(container, 'fk-cols');
+        const refDb = container.querySelector('#fk-ref-db').value || dbName;
+        const refTable = container.querySelector('#fk-ref-table').value;
+        const refCols = getColPickerValues(container, 'fk-ref-cols');
+        const onUpdate = container.querySelector('#fk-on-update').value;
+        const onDelete = container.querySelector('#fk-on-delete').value;
+        const errEl = container.querySelector('#fk-error');
+        if (!cols.length || !refTable || !refCols.length) {
+            errEl.textContent = 'Column, ref. table and ref. column are required';
+            errEl.classList.remove('hidden');
+            return;
+        }
+        errEl.classList.add('hidden');
+        const btn = container.querySelector('#fk-add-btn');
+        btn.disabled = true;
+        btn.textContent = 'Adding…';
+        try {
+            await api('foreign_keys', { action: 'add', database: dbName, table: tableName, name, columns: cols, ref_db: refDb, ref_table: refTable, ref_cols: refCols, on_update: onUpdate, on_delete: onDelete });
+            toast('Foreign key added', 'success');
+            const fresh = await api('table_structure', { database: dbName, table: tableName });
+            renderForeignKeysTab(container, dbName, tableName, fresh.foreign_keys || [], fresh.indexes || [], tableCols);
+        }
+        catch (err) {
+            errEl.textContent = err.message;
+            errEl.classList.remove('hidden');
+            btn.disabled = false;
+            btn.textContent = 'Add Foreign Key';
+        }
+    });
 }
 // ── Structure editor ──────────────────────────────────────────────────────────
 const TYPE_GROUPS = {
@@ -2512,10 +3332,7 @@ function parseColumnDef(row) {
         originalName: row.Field,
         name: row.Field,
         baseType: baseType || 'VARCHAR',
-        length,
-        decimals,
-        enumValues,
-        unsigned,
+        length, decimals, enumValues, unsigned,
         allowNull: row.Null === 'YES',
         defaultType: row.Default === null ? 'NULL' : row.Default === '' ? 'EMPTY' : row.Default === 'CURRENT_TIMESTAMP' ? 'CURRENT_TIMESTAMP' : 'VALUE',
         defaultValue: (row.Default !== null && row.Default !== 'CURRENT_TIMESTAMP') ? String(row.Default) : '',
@@ -2598,16 +3415,9 @@ function renderStructure(container, columns, editMode, onUpdate) {
                 <thead>
                     <tr>
                         <th class="col-drag-th"></th>
-                        <th>Field</th>
-                        <th>Type</th>
-                        <th>Length / Values</th>
-                        <th>Collation</th>
-                        <th>Unsigned</th>
-                        <th>Allow NULL</th>
-                        <th>Default</th>
-                        <th>A_I</th>
-                        <th>Key</th>
-                        <th></th>
+                        <th>Field</th><th>Type</th><th>Length / Values</th>
+                        <th>Collation</th><th>Unsigned</th><th>Allow NULL</th>
+                        <th>Default</th><th>A_I</th><th>Key</th><th></th>
                     </tr>
                 </thead>
                 <tbody id="struct-editor-body">
@@ -2659,9 +3469,7 @@ function buildEditorRow(col, idx) {
             </svg>
         </td>
         <td><input class="col-name tbl-input" value="${escAttr(col.name || '')}" style="width:120px"></td>
-        <td>
-            <select class="col-type tbl-input tbl-select" style="width:130px">${typeOptions}</select>
-        </td>
+        <td><select class="col-type tbl-input tbl-select" style="width:130px">${typeOptions}</select></td>
         <td class="col-extra-cell">
             <span class="col-len-wrap"${showLen ? '' : ' style="display:none"'}>
                 <input class="col-length tbl-input" value="${escAttr(col.length || '')}" placeholder="Length" style="width:70px">
@@ -2814,8 +3622,7 @@ function wireEditorEvents(container, columns, onUpdate) {
         tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over-top', 'drag-over-bottom', 'dragging'));
         if (!target || !dragSrc || target === dragSrc)
             return;
-        const rect = target.getBoundingClientRect();
-        const after = e.clientY > rect.top + rect.height / 2;
+        const after = e.clientY > target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2;
         if (after)
             target.after(dragSrc);
         else
@@ -2827,6 +3634,7 @@ function wireEditorEvents(container, columns, onUpdate) {
     });
 }
 function updateRowVisibility(tr, type) {
+    var _a;
     const showLen = TYPES_WITH_LENGTH.has(type) && !TYPES_WITH_VALUES.has(type);
     const showDec = TYPES_WITH_DECIMALS.has(type);
     const showEnum = TYPES_WITH_VALUES.has(type);
@@ -2866,9 +3674,7 @@ function updateRowVisibility(tr, type) {
                 }
             }
             else {
-                const opt = existing.querySelector('option[value="CURRENT_TIMESTAMP"]');
-                if (opt)
-                    opt.remove();
+                (_a = existing.querySelector('option[value="CURRENT_TIMESTAMP"]')) === null || _a === void 0 ? void 0 : _a.remove();
             }
         }
     }

@@ -74,30 +74,55 @@ const THEMES: Record<string, Theme> = {
 };
 
 const THEME_STORAGE_KEY = 'yoursql_theme';
-const THEME_CUSTOM_KEY  = 'yoursql_custom_vars';
 
-function applyTheme(themeId: string, customVars: Record<string, string> = {}): void {
-    const theme = THEMES[themeId] || THEMES['dark-blue'];
-    const vars  = { ...theme.vars, ...customVars };
-    const root  = document.documentElement;
+// All configurable CSS variables shown in the color editor
+const CUSTOM_COLORS = [
+    { key: '--bg',           label: 'Background' },
+    { key: '--bg-2',         label: 'Sidebar / panels' },
+    { key: '--bg-3',         label: 'Inputs / table rows' },
+    { key: '--bg-4',         label: 'Hover / subtle bg' },
+    { key: '--border',       label: 'Border' },
+    { key: '--border-light', label: 'Border light' },
+    { key: '--accent',       label: 'Accent' },
+    { key: '--accent-hover', label: 'Accent hover' },
+    { key: '--text',         label: 'Text' },
+    { key: '--text-muted',   label: 'Text muted' },
+    { key: '--text-dim',     label: 'Text dim' },
+    { key: '--color-str',    label: 'String values' },
+    { key: '--color-num',    label: 'Number values' },
+    { key: '--color-date',   label: 'Date values' },
+];
+
+// ── Apply theme to :root ───────────────────────────────────────────────────────
+
+function applyThemeVars(vars: Record<string, string>): void {
+    const root = document.documentElement;
     Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
 }
 
-function loadSavedTheme(): void {
-    const themeId   = localStorage.getItem(THEME_STORAGE_KEY) || 'light';
-    const customRaw = localStorage.getItem(THEME_CUSTOM_KEY);
-    const custom    = customRaw ? JSON.parse(customRaw) : {};
-    applyTheme(themeId, custom);
+function applyTheme(themeId: string, overrides: Record<string, string> = {}): void {
+    const base = THEMES[themeId] || THEMES['dark-blue'];
+    applyThemeVars({ ...base.vars, ...overrides });
 }
 
-function saveTheme(themeId: string, customVars: Record<string, string>): void {
-    localStorage.setItem(THEME_STORAGE_KEY, themeId);
-    localStorage.setItem(THEME_CUSTOM_KEY, JSON.stringify(customVars));
+// ── Startup: apply saved theme or server-injected custom theme ─────────────────
+
+function loadSavedTheme(): void {
+    // If server injected a custom theme, it's already in CSS via <style id="server-theme">.
+    // We still call applyThemeVars so JS-driven changes (live preview) override cleanly.
+    if ((window as any).__serverTheme) {
+        const st = (window as any).__serverTheme;
+        const base = THEMES[st.base] || THEMES['dark-blue'];
+        applyThemeVars({ ...base.vars, ...st.vars });
+        return;
+    }
+    const themeId = localStorage.getItem(THEME_STORAGE_KEY) || 'dark-blue';
+    applyTheme(themeId);
 }
 
 loadSavedTheme();
 
-// ── Settings modal ────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function cssColorToHex(color: string): string {
     if (!color) return '#000000';
@@ -115,125 +140,216 @@ function cssColorToHex(color: string): string {
     return '#000000';
 }
 
+// ── Settings modal ─────────────────────────────────────────────────────────────
+
 function openSettings(): void {
     if (document.getElementById('settings-overlay')) return;
 
-    const themeId   = localStorage.getItem(THEME_STORAGE_KEY) || 'light';
-    const customRaw = localStorage.getItem(THEME_CUSTOM_KEY);
-    let custom: Record<string, string> = customRaw ? JSON.parse(customRaw) : {};
+    // Determine active theme: server custom > localStorage > default
+    const serverTheme  = (window as any).__serverTheme as { vars: Record<string,string>; base: string | null } | null;
+    const hasCustom    = !!serverTheme;
+    const activeTheme  = hasCustom ? (serverTheme!.base || 'dark-blue') : (localStorage.getItem(THEME_STORAGE_KEY) || 'dark-blue');
 
-    const CUSTOM_COLORS = [
-        { key: '--accent',     label: 'Accent color' },
-        { key: '--bg',         label: 'Background' },
-        { key: '--bg-2',       label: 'Sidebar / panels' },
-        { key: '--bg-3',       label: 'Inputs' },
-        { key: '--text',       label: 'Text' },
-        { key: '--text-muted', label: 'Text muted' },
-        { key: '--border',     label: 'Border' },
-        { key: '--color-str',  label: 'Text values' },
-        { key: '--color-num',  label: 'Number values' },
-        { key: '--color-date', label: 'Date values' },
-    ];
+    // Current vars for pickers: merge base + server overrides
+    function getActiveVars(themeId: string, customOverrides: Record<string,string> = {}): Record<string,string> {
+        return { ...(THEMES[themeId] || THEMES['dark-blue']).vars, ...customOverrides };
+    }
 
-    const themeButtons = Object.entries(THEMES).map(([id, t]) => `
-        <button class="theme-btn${id === themeId ? ' active' : ''}" data-theme="${id}">
-            <span class="theme-swatch" style="
-                background: linear-gradient(135deg, ${t.vars['--bg-2']} 50%, ${t.vars['--accent']} 50%);
-                border-color: ${t.vars['--border-light']};
-            "></span>
-            ${escHtml(t.label)}
-        </button>
-    `).join('');
+    let currentTheme   = activeTheme;
+    let currentCustom: Record<string,string> = hasCustom ? { ...serverTheme!.vars } : {};
+    let isCustomActive = hasCustom;
 
     const overlay = document.createElement('div');
     overlay.id = 'settings-overlay';
-    overlay.innerHTML = `
-        <div class="settings-modal" id="settings-modal">
-            <div class="rem-header">
-                <span class="rem-title">Settings</span>
-                <button class="rem-close" id="settings-close">
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z"/>
-                    </svg>
-                </button>
-            </div>
-            <div class="rem-body">
-                <div class="settings-section-title">Theme</div>
-                <div class="theme-grid" id="theme-grid">${themeButtons}</div>
 
-                <div class="settings-section-title" style="margin-top:18px">Custom colors
-                    <button class="settings-reset-btn" id="settings-reset">Reset to theme defaults</button>
-                </div>
-                <div class="custom-colors-grid">
-                    ${CUSTOM_COLORS.map(c => {
-                        const theme  = THEMES[themeId] || THEMES['dark-blue'];
-                        const val    = custom[c.key] || theme.vars[c.key] || '#000000';
-                        const hex    = cssColorToHex(val);
-                        return `
-                        <div class="custom-color-row">
-                            <label class="custom-color-label">${escHtml(c.label)}</label>
-                            <div class="custom-color-right">
-                                <input type="color" class="color-picker" data-var="${c.key}" value="${hex}">
-                                <span class="color-val">${val}</span>
-                            </div>
-                        </div>`;
-                    }).join('')}
-                </div>
-            </div>
-        </div>
-    `;
+    function buildThemeButtons(): string {
+        const btns = Object.entries(THEMES).map(([id, t]) => `
+            <button class="theme-btn${!isCustomActive && id === currentTheme ? ' active' : ''}" data-theme="${id}">
+                <span class="theme-swatch" style="
+                    background: linear-gradient(135deg, ${t.vars['--bg-2']} 50%, ${t.vars['--accent']} 50%);
+                    border-color: ${t.vars['--border-light']};
+                "></span>
+                ${escHtml(t.label)}
+            </button>
+        `).join('');
 
-    document.body.appendChild(overlay);
+        const customSwatch = isCustomActive
+            ? (() => {
+                const v = getActiveVars(currentTheme, currentCustom);
+                return `background: linear-gradient(135deg, ${v['--bg-2'] || '#222'} 50%, ${v['--accent'] || '#4f8ef7'} 50%); border-color: ${v['--border-light'] || '#444'};`;
+              })()
+            : 'background: linear-gradient(135deg, #1a1a2e 50%, #e94560 50%); border-color: #444;';
 
-    let currentTheme  = themeId;
-    let currentCustom = { ...custom };
+        const customBtn = `
+            <button class="theme-btn${isCustomActive ? ' active' : ''}" id="theme-btn-custom" data-theme="__custom__">
+                <span class="theme-swatch" style="${customSwatch}"></span>
+                Custom
+                ${isCustomActive ? '<span class="theme-custom-badge">saved</span>' : ''}
+            </button>
+        `;
 
-    function rerender() {
-        applyTheme(currentTheme, currentCustom);
-        saveTheme(currentTheme, currentCustom);
+        return btns + customBtn;
     }
 
-    overlay.querySelectorAll('.theme-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            overlay.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            currentTheme  = (btn as HTMLElement).dataset.theme!;
+    function buildColorPickers(): string {
+        const vars = getActiveVars(currentTheme, currentCustom);
+        return CUSTOM_COLORS.map(c => {
+            const val = vars[c.key] || '#000000';
+            const hex = cssColorToHex(val);
+            return `
+            <div class="custom-color-row">
+                <label class="custom-color-label">${escHtml(c.label)}</label>
+                <div class="custom-color-right">
+                    <input type="color" class="color-picker" data-var="${c.key}" value="${hex}">
+                    <span class="color-val">${escHtml(val)}</span>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function renderModal(): void {
+        overlay.innerHTML = `
+            <div class="settings-modal" id="settings-modal">
+                <div class="rem-header">
+                    <span class="rem-title">Settings</span>
+                    <button class="rem-close" id="settings-close">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M4.646 4.646a.5.5 0 01.708 0L8 7.293l2.646-2.647a.5.5 0 01.708.708L8.707 8l2.647 2.646a.5.5 0 01-.708.708L8 8.707l-2.646 2.647a.5.5 0 01-.708-.708L7.293 8 4.646 5.354a.5.5 0 010-.708z"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="rem-body">
+                    <div class="settings-section-title">Theme</div>
+                    <div class="theme-grid" id="theme-grid">${buildThemeButtons()}</div>
+
+                    <div class="settings-section-title" style="margin-top:18px;display:flex;align-items:center;gap:10px">
+                        <span>Colors</span>
+                        <button class="settings-reset-btn" id="settings-reset">Reset to theme defaults</button>
+                    </div>
+                    <div class="custom-colors-grid" id="colors-grid">${buildColorPickers()}</div>
+
+                    <div class="settings-custom-actions">
+                        <button class="btn btn-accent btn-sm" id="btn-save-custom">
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style="margin-right:4px">
+                                <path d="M2 1a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V4.5L10.5 1H2zm5 11a3 3 0 110-6 3 3 0 010 6zM3 3h6v2H3V3z"/>
+                            </svg>
+                            Save Custom Theme
+                        </button>
+                        ${isCustomActive ? `
+                        <button class="btn btn-danger btn-sm" id="btn-delete-custom">
+                            Delete Custom Theme
+                        </button>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+        bindEvents();
+    }
+
+    function bindEvents(): void {
+        overlay.querySelector('#settings-close')!.addEventListener('click', closeSettings);
+
+        // Theme buttons
+        overlay.querySelectorAll('.theme-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = (btn as HTMLElement).dataset.theme!;
+                if (id === '__custom__') {
+                    if (!isCustomActive) return;
+                    // Re-activate saved custom
+                    currentTheme  = serverTheme?.base || 'dark-blue';
+                    currentCustom = { ...(serverTheme?.vars || {}) };
+                    isCustomActive = true;
+                } else {
+                    currentTheme   = id;
+                    currentCustom  = {};
+                    isCustomActive = false;
+                    localStorage.setItem(THEME_STORAGE_KEY, id);
+                }
+                applyTheme(currentTheme, currentCustom);
+                renderModal();
+            });
+        });
+
+        // Color pickers — live preview
+        overlay.querySelectorAll('.color-picker').forEach(p => {
+            const picker = p as HTMLInputElement;
+            picker.addEventListener('input', () => {
+                currentCustom[picker.dataset.var!] = picker.value;
+                picker.closest('.custom-color-row')!.querySelector('.color-val')!.textContent = picker.value;
+                applyTheme(currentTheme, currentCustom);
+            });
+        });
+
+        // Reset to current theme defaults
+        overlay.querySelector('#settings-reset')!.addEventListener('click', () => {
             currentCustom = {};
-            const themeVars = THEMES[currentTheme].vars;
+            applyTheme(currentTheme);
+            const themeVars = (THEMES[currentTheme] || THEMES['dark-blue']).vars;
             overlay.querySelectorAll('.color-picker').forEach(p => {
                 const picker = p as HTMLInputElement;
                 const val = themeVars[picker.dataset.var!] || '#000000';
                 picker.value = cssColorToHex(val);
                 picker.closest('.custom-color-row')!.querySelector('.color-val')!.textContent = val;
             });
-            rerender();
         });
-    });
 
-    overlay.querySelectorAll('.color-picker').forEach(p => {
-        const picker = p as HTMLInputElement;
-        picker.addEventListener('input', () => {
-            currentCustom[picker.dataset.var!] = picker.value;
-            picker.closest('.custom-color-row')!.querySelector('.color-val')!.textContent = picker.value;
-            rerender();
+        // Save custom theme to server
+        overlay.querySelector('#btn-save-custom')!.addEventListener('click', async () => {
+            const btn = overlay.querySelector('#btn-save-custom') as HTMLButtonElement;
+            btn.disabled    = true;
+            btn.textContent = 'Saving…';
+            try {
+                await api('settings', {
+                    action: 'set',
+                    pairs: {
+                        custom_theme_vars: JSON.stringify(currentCustom),
+                        custom_theme_base: currentTheme,
+                    },
+                });
+                // Update window.__serverTheme so re-renders are consistent
+                (window as any).__serverTheme = { vars: { ...currentCustom }, base: currentTheme };
+                isCustomActive = true;
+                toast('Custom theme saved', 'success');
+                renderModal();
+            } catch (err: any) {
+                toast('Error: ' + err.message, 'error');
+                btn.disabled    = false;
+                btn.textContent = 'Save Custom Theme';
+            }
         });
-    });
 
-    overlay.querySelector('#settings-reset')!.addEventListener('click', () => {
-        currentCustom = {};
-        const themeVars = THEMES[currentTheme].vars;
-        overlay.querySelectorAll('.color-picker').forEach(p => {
-            const picker = p as HTMLInputElement;
-            const val = themeVars[picker.dataset.var!] || '#000000';
-            picker.value = cssColorToHex(val);
-            picker.closest('.custom-color-row')!.querySelector('.color-val')!.textContent = val;
-        });
-        rerender();
-    });
+        // Delete custom theme
+        const delBtn = overlay.querySelector('#btn-delete-custom');
+        if (delBtn) {
+            delBtn.addEventListener('click', async () => {
+                (delBtn as HTMLButtonElement).disabled = true;
+                try {
+                    await api('settings', {
+                        action: 'delete',
+                        keys: ['custom_theme_vars', 'custom_theme_base'],
+                    });
+                    (window as any).__serverTheme = null;
+                    isCustomActive = false;
+                    currentCustom  = {};
+                    // Fall back to localStorage theme
+                    const saved = localStorage.getItem(THEME_STORAGE_KEY) || 'dark-blue';
+                    currentTheme   = saved;
+                    applyTheme(currentTheme);
+                    toast('Custom theme deleted', 'success');
+                    renderModal();
+                } catch (err: any) {
+                    toast('Error: ' + err.message, 'error');
+                    (delBtn as HTMLButtonElement).disabled = false;
+                }
+            });
+        }
+    }
 
-    function closeSettings() { overlay.remove(); }
-    overlay.querySelector('#settings-close')!.addEventListener('click', closeSettings);
+    function closeSettings(): void { overlay.remove(); }
     overlay.addEventListener('click', (e) => { if (e.target === overlay) closeSettings(); });
+
+    document.body.appendChild(overlay);
+    renderModal();
 }
 
 document.getElementById('btn-settings')!.addEventListener('click', openSettings);

@@ -21,3 +21,6 @@ package-lock.json
 .env.*
 !.env.example
 config.local.php
+
+# Runtime data (remember-me tokens)
+/data/

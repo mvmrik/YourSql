@@ -2,6 +2,7 @@
 
 document.getElementById('btn-disconnect')!.addEventListener('click', async () => {
     await fetch('api/disconnect.php', { method: 'POST' });
+    localStorage.removeItem(TABS_STORAGE_KEY);
     window.location.href = 'index.php';
 });
 
@@ -19,6 +20,7 @@ async function init(): Promise<void> {
         }
 
         await loadDatabases();
+        loadPersistedTabs();
     } catch (err) {
         window.location.href = 'index.php';
     }

@@ -476,7 +476,7 @@ function renderPagination(container: Element, current: number, total: number): v
     const range = paginationRange(current, total);
     container.innerHTML = '';
 
-    container.appendChild(makePageBtn('‹', current > 1, () => loadTableData(state.currentDb!, state.currentTable!, current - 1)));
+    container.appendChild(makePageBtn('‹', current > 1, () => { pinTab(); loadTableData(state.currentDb!, state.currentTable!, current - 1); }));
 
     range.forEach(p => {
         if (p === '…') {
@@ -484,13 +484,13 @@ function renderPagination(container: Element, current: number, total: number): v
             el.className = 'page-btn'; el.textContent = '…'; el.disabled = true;
             container.appendChild(el);
         } else {
-            const el = makePageBtn(String(p), true, () => loadTableData(state.currentDb!, state.currentTable!, p as number));
+            const el = makePageBtn(String(p), true, () => { pinTab(); loadTableData(state.currentDb!, state.currentTable!, p as number); });
             if (p === current) el.classList.add('active');
             container.appendChild(el);
         }
     });
 
-    container.appendChild(makePageBtn('›', current < total, () => loadTableData(state.currentDb!, state.currentTable!, current + 1)));
+    container.appendChild(makePageBtn('›', current < total, () => { pinTab(); loadTableData(state.currentDb!, state.currentTable!, current + 1); }));
 }
 
 function makePageBtn(label: string, enabled: boolean, onClick: () => void): HTMLButtonElement {

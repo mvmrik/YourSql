@@ -474,7 +474,7 @@ function saveCurrentTabState() {
 function findTab(dbName, tableName) {
     return state.tabs.find(t => t.dbName === dbName && t.tableName === tableName);
 }
-function createTab(dbName, tableName) {
+function createTab(dbName, tableName, preview = false) {
     const tab = {
         id: generateTabId(),
         dbName, tableName,
@@ -483,9 +483,18 @@ function createTab(dbName, tableName) {
         lastSql: null, sqlPanelOpen: false,
         colMeta: {}, selection: { mode: 'none', pageRows: [] },
         html: '', scrollTop: 0,
+        preview,
     };
     state.tabs.push(tab);
     return tab;
+}
+function pinTab(tabId) {
+    const id = tabId !== null && tabId !== void 0 ? tabId : state.activeTabId;
+    const tab = state.tabs.find(t => t.id === id);
+    if (tab === null || tab === void 0 ? void 0 : tab.preview) {
+        tab.preview = false;
+        renderTabBar();
+    }
 }
 function closeTab(tabId) {
     const idx = state.tabs.findIndex(t => t.id === tabId);
@@ -635,7 +644,7 @@ function renderTabBar() {
     }
     bar.style.display = 'flex';
     bar.innerHTML = state.tabs.map(tab => `
-        <div class="tab-item${tab.id === state.activeTabId ? ' active' : ''}" data-tab-id="${escAttr(tab.id)}">
+        <div class="tab-item${tab.id === state.activeTabId ? ' active' : ''}${tab.preview ? ' preview' : ''}" data-tab-id="${escAttr(tab.id)}">
             <svg class="tab-icon" width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M0 2a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V2zm15 2H1v3h14V4zm0 4H1v3h14V8zm0 4H1v2a1 1 0 001 1h12a1 1 0 001-1v-2z"/>
             </svg>
@@ -649,8 +658,10 @@ function renderTabBar() {
         el.addEventListener('click', (e) => {
             if (e.target.classList.contains('tab-close'))
                 return;
-            if (tabId === state.activeTabId)
+            if (tabId === state.activeTabId) {
+                pinTab(tabId);
                 return;
+            }
             saveCurrentTabState();
             const tab = state.tabs.find(t => t.id === tabId);
             restoreTab(tab);
@@ -674,8 +685,29 @@ function tabsBeforeLoad(dbName, tableName) {
         saveCurrentTabState();
     let tab = findTab(dbName, tableName);
     const isExisting = !!tab;
-    if (!tab)
-        tab = createTab(dbName, tableName);
+    if (!tab) {
+        const previewTab = state.tabs.find(t => t.preview);
+        if (previewTab) {
+            // Reuse the preview tab slot — just update its identity and reset state
+            previewTab.dbName = dbName;
+            previewTab.tableName = tableName;
+            previewTab.page = 1;
+            previewTab.pageSize = 50;
+            previewTab.totalRows = 0;
+            previewTab.filters = [];
+            previewTab.sort = [];
+            previewTab.lastSql = null;
+            previewTab.sqlPanelOpen = false;
+            previewTab.colMeta = {};
+            previewTab.selection = { mode: 'none', pageRows: [] };
+            previewTab.html = '';
+            previewTab.scrollTop = 0;
+            tab = previewTab;
+        }
+        else {
+            tab = createTab(dbName, tableName, true);
+        }
+    }
     state.activeTabId = tab.id;
     persistTabs();
     renderTabBar();
@@ -1395,7 +1427,8 @@ function buildFilterRow(f, idx, columns, colMeta) {
         valWrap.innerHTML = '';
         if (OPS_NO_VALUE.has(op))
             return;
-        const meta = colMeta[colSel.value] || {};
+        const isInOp = op === 'IN' || op === 'NOT IN';
+        const meta = isInOp ? {} : (colMeta[colSel.value] || {});
         const inp = buildCellInput(meta, currentVal !== null && currentVal !== void 0 ? currentVal : '', true);
         inp.className = 'tbl-input filter-val-input';
         inp.placeholder = op === 'IN' || op === 'NOT IN' ? '1,2,3' : op === 'LIKE %%' ? 'search term' : 'value';
@@ -1446,7 +1479,7 @@ function addFilter(col) {
         return;
     }
     const meta = (state.colMeta[col] || {});
-    const defaultOp = (meta.baseType && ['TINYINT', 'SMALLINT', 'MEDIUMINT', 'INT', 'BIGINT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'NUMERIC'].includes(meta.baseType)) ? '=' : 'LIKE';
+    const defaultOp = (meta.baseType && ['TINYINT', 'SMALLINT', 'MEDIUMINT', 'INT', 'BIGINT', 'FLOAT', 'DOUBLE', 'DECIMAL', 'NUMERIC'].includes(meta.baseType)) ? '=' : 'LIKE %%';
     state.filters.push({ col, op: defaultOp, val: '' });
     if (!state.sort.length)
         state.sort = [{ col, dir: 'ASC' }];
@@ -1464,6 +1497,7 @@ function runSearch() {
         if (state.filters[idx])
             state.filters[idx].val = val;
     });
+    pinTab();
     loadTableData(state.currentDb, state.currentTable, 1);
 }
 // ── Pinned columns ────────────────────────────────────────────────────────────
@@ -2011,7 +2045,7 @@ function startInlineEdit(td, col, originalVal, meta, row, columns, colMeta) {
 function renderPagination(container, current, total) {
     const range = paginationRange(current, total);
     container.innerHTML = '';
-    container.appendChild(makePageBtn('‹', current > 1, () => loadTableData(state.currentDb, state.currentTable, current - 1)));
+    container.appendChild(makePageBtn('‹', current > 1, () => { pinTab(); loadTableData(state.currentDb, state.currentTable, current - 1); }));
     range.forEach(p => {
         if (p === '…') {
             const el = document.createElement('button');
@@ -2021,13 +2055,13 @@ function renderPagination(container, current, total) {
             container.appendChild(el);
         }
         else {
-            const el = makePageBtn(String(p), true, () => loadTableData(state.currentDb, state.currentTable, p));
+            const el = makePageBtn(String(p), true, () => { pinTab(); loadTableData(state.currentDb, state.currentTable, p); });
             if (p === current)
                 el.classList.add('active');
             container.appendChild(el);
         }
     });
-    container.appendChild(makePageBtn('›', current < total, () => loadTableData(state.currentDb, state.currentTable, current + 1)));
+    container.appendChild(makePageBtn('›', current < total, () => { pinTab(); loadTableData(state.currentDb, state.currentTable, current + 1); }));
 }
 function makePageBtn(label, enabled, onClick) {
     const btn = document.createElement('button');
@@ -2442,6 +2476,7 @@ function openRowEditModal(row, columns, colMeta) {
             });
             toast('Row deleted', 'success');
             close();
+            pinTab();
             loadTableData(state.currentDb, state.currentTable, state.page);
         }
         catch (err) {
@@ -2474,6 +2509,7 @@ function openRowEditModal(row, columns, colMeta) {
             });
             toast('Row updated', 'success');
             close();
+            pinTab();
             const tr = [...document.querySelectorAll('.data-row')].find((r) => r._rowData === row);
             if (tr) {
                 const newRow = Object.assign(Object.assign({}, row), updates);
@@ -2794,6 +2830,7 @@ async function executeSqlPanel() {
         : (_a = document.getElementById('sql-panel-textarea')) === null || _a === void 0 ? void 0 : _a.value.trim();
     if (!sql || !result)
         return;
+    pinTab();
     const btn = document.getElementById('sql-execute-btn');
     btn.disabled = true;
     btn.textContent = 'Running…';
@@ -3837,6 +3874,30 @@ function showCreateTable(dbName) {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 init();
 // ── Import / Export modal ─────────────────────────────────────────────────────
+function confirmModal(title, items, warning) {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay confirm-modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal confirm-modal-box">
+                <div class="modal-header">
+                    <span class="modal-title">${escHtml(title)}</span>
+                </div>
+                <div class="confirm-modal-body">
+                    <div class="confirm-modal-list">${items.map(i => `<div>${escHtml(i)}</div>`).join('')}</div>
+                    <p class="confirm-modal-warning">${escHtml(warning)}</p>
+                </div>
+                <div class="confirm-modal-footer">
+                    <button class="btn btn-default" id="confirm-cancel">Cancel</button>
+                    <button class="btn btn-danger" id="confirm-ok">OK</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const close = (result) => { overlay.remove(); resolve(result); };
+        overlay.querySelector('#confirm-cancel').addEventListener('click', () => close(false));
+        overlay.querySelector('#confirm-ok').addEventListener('click', () => close(true));
+    });
+}
 function showImportExportModal(dbName, initialTab = 'export') {
     const existing = document.getElementById('ie-modal');
     if (existing)
@@ -4206,9 +4267,8 @@ async function runTableOp(overlay, dbName, op, tables, btn) {
     const lbl = overlay.querySelector('#btn-manage-label');
     const resultBox = overlay.querySelector('#ie-maint-result');
     if (DESTRUCTIVE_OPS.has(op)) {
-        const confirmed = confirm(`Are you sure you want to ${op} ${tables.length} table${tables.length !== 1 ? 's' : ''}?\n\n` +
-            tables.join('\n') +
-            (op === 'drop' ? '\n\nThis will permanently delete the tables!' : '\n\nThis will delete ALL rows in these tables!'));
+        const warning = op === 'drop' ? 'This will permanently delete the tables!' : 'This will delete ALL rows in these tables!';
+        const confirmed = await confirmModal(`Are you sure you want to ${op} ${tables.length} table${tables.length !== 1 ? 's' : ''}?`, tables, warning);
         if (!confirmed)
             return;
     }

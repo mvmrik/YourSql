@@ -85,6 +85,7 @@ function openRowEditModal(row: Record<string, any>, columns: string[], colMeta: 
             });
             toast('Row deleted', 'success');
             close();
+            pinTab();
             loadTableData(state.currentDb!, state.currentTable!, state.page);
         } catch (err: any) {
             toast('Error: ' + err.message, 'error');
@@ -117,6 +118,7 @@ function openRowEditModal(row: Record<string, any>, columns: string[], colMeta: 
             });
             toast('Row updated', 'success');
             close();
+            pinTab();
 
             const tr = [...document.querySelectorAll('.data-row')].find((r: any) => r._rowData === row) as any;
             if (tr) {

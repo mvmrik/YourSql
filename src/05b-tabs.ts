@@ -77,7 +77,7 @@ function findTab(dbName: string, tableName: string): TabState | undefined {
     return state.tabs.find(t => t.dbName === dbName && t.tableName === tableName);
 }
 
-function createTab(dbName: string, tableName: string): TabState {
+function createTab(dbName: string, tableName: string, preview = false): TabState {
     const tab: TabState = {
         id: generateTabId(),
         dbName, tableName,
@@ -86,9 +86,16 @@ function createTab(dbName: string, tableName: string): TabState {
         lastSql: null, sqlPanelOpen: false,
         colMeta: {}, selection: { mode: 'none', pageRows: [] },
         html: '', scrollTop: 0,
+        preview,
     };
     state.tabs.push(tab);
     return tab;
+}
+
+function pinTab(tabId?: string): void {
+    const id = tabId ?? state.activeTabId;
+    const tab = state.tabs.find(t => t.id === id);
+    if (tab?.preview) { tab.preview = false; renderTabBar(); }
 }
 
 function closeTab(tabId: string): void {
@@ -261,7 +268,7 @@ function renderTabBar(): void {
 
     bar.style.display = 'flex';
     bar.innerHTML = state.tabs.map(tab => `
-        <div class="tab-item${tab.id === state.activeTabId ? ' active' : ''}" data-tab-id="${escAttr(tab.id)}">
+        <div class="tab-item${tab.id === state.activeTabId ? ' active' : ''}${tab.preview ? ' preview' : ''}" data-tab-id="${escAttr(tab.id)}">
             <svg class="tab-icon" width="11" height="11" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M0 2a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H2a2 2 0 01-2-2V2zm15 2H1v3h14V4zm0 4H1v3h14V8zm0 4H1v2a1 1 0 001 1h12a1 1 0 001-1v-2z"/>
             </svg>
@@ -276,7 +283,7 @@ function renderTabBar(): void {
 
         el.addEventListener('click', (e: Event) => {
             if ((e.target as Element).classList.contains('tab-close')) return;
-            if (tabId === state.activeTabId) return;
+            if (tabId === state.activeTabId) { pinTab(tabId); return; }
             saveCurrentTabState();
             const tab = state.tabs.find(t => t.id === tabId)!;
             restoreTab(tab);
@@ -306,7 +313,29 @@ function tabsBeforeLoad(dbName: string, tableName: string): { isExisting: boolea
 
     let tab = findTab(dbName, tableName);
     const isExisting = !!tab;
-    if (!tab) tab = createTab(dbName, tableName);
+
+    if (!tab) {
+        const previewTab = state.tabs.find(t => t.preview);
+        if (previewTab) {
+            // Reuse the preview tab slot — just update its identity and reset state
+            previewTab.dbName    = dbName;
+            previewTab.tableName = tableName;
+            previewTab.page      = 1;
+            previewTab.pageSize  = 50;
+            previewTab.totalRows = 0;
+            previewTab.filters   = [];
+            previewTab.sort      = [];
+            previewTab.lastSql   = null;
+            previewTab.sqlPanelOpen = false;
+            previewTab.colMeta   = {};
+            previewTab.selection = { mode: 'none', pageRows: [] };
+            previewTab.html      = '';
+            previewTab.scrollTop = 0;
+            tab = previewTab;
+        } else {
+            tab = createTab(dbName, tableName, true);
+        }
+    }
 
     state.activeTabId = tab.id;
     persistTabs();

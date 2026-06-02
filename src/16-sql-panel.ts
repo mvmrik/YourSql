@@ -96,6 +96,7 @@ async function executeSqlPanel(): Promise<void> {
         : (document.getElementById('sql-panel-textarea') as HTMLTextAreaElement | null)?.value.trim();
     if (!sql || !result) return;
 
+    pinTab();
     const btn = document.getElementById('sql-execute-btn') as HTMLButtonElement;
     btn.disabled    = true;
     btn.textContent = 'Running…';

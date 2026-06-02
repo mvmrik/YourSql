@@ -44,6 +44,7 @@ interface TabState {
     selection: { mode: 'none' | 'page' | 'all'; pageRows: any[] };
     html: string;
     scrollTop: number;
+    preview: boolean;
 }
 
 interface AppState {

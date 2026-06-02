@@ -1,5 +1,30 @@
 // ── Import / Export modal ─────────────────────────────────────────────────────
 
+function confirmModal(title: string, items: string[], warning: string): Promise<boolean> {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay confirm-modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal confirm-modal-box">
+                <div class="modal-header">
+                    <span class="modal-title">${escHtml(title)}</span>
+                </div>
+                <div class="confirm-modal-body">
+                    <div class="confirm-modal-list">${items.map(i => `<div>${escHtml(i)}</div>`).join('')}</div>
+                    <p class="confirm-modal-warning">${escHtml(warning)}</p>
+                </div>
+                <div class="confirm-modal-footer">
+                    <button class="btn btn-default" id="confirm-cancel">Cancel</button>
+                    <button class="btn btn-danger" id="confirm-ok">OK</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const close = (result: boolean) => { overlay.remove(); resolve(result); };
+        overlay.querySelector('#confirm-cancel')!.addEventListener('click', () => close(false));
+        overlay.querySelector('#confirm-ok')!.addEventListener('click', () => close(true));
+    });
+}
+
 type IETab = 'import' | 'export' | 'manage';
 type ManageOp = 'truncate' | 'drop' | 'analyze' | 'optimize' | 'check' | 'repair';
 
@@ -385,10 +410,11 @@ async function runTableOp(overlay: Element, dbName: string, op: ManageOp, tables
     const resultBox = overlay.querySelector('#ie-maint-result') as HTMLElement;
 
     if (DESTRUCTIVE_OPS.has(op)) {
-        const confirmed = confirm(
-            `Are you sure you want to ${op} ${tables.length} table${tables.length !== 1 ? 's' : ''}?\n\n` +
-            tables.join('\n') +
-            (op === 'drop' ? '\n\nThis will permanently delete the tables!' : '\n\nThis will delete ALL rows in these tables!')
+        const warning = op === 'drop' ? 'This will permanently delete the tables!' : 'This will delete ALL rows in these tables!';
+        const confirmed = await confirmModal(
+            `Are you sure you want to ${op} ${tables.length} table${tables.length !== 1 ? 's' : ''}?`,
+            tables,
+            warning
         );
         if (!confirmed) return;
     }

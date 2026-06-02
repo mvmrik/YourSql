@@ -89,7 +89,7 @@ foreach ($tables as $table) {
 
             $vals = array_map(function ($v) use ($pdo) {
                 if ($v === null) return 'NULL';
-                if (is_numeric($v) && !preg_match('/^0\d/', $v)) return $v;
+                if (is_int($v) || is_float($v)) return $v;
                 return $pdo->quote($v);
             }, $row);
 

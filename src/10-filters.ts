@@ -159,7 +159,8 @@ function buildFilterRow(f: Filter, idx: number, columns: string[], colMeta: Reco
     const buildValInput = (op: string, currentVal: any) => {
         valWrap.innerHTML = '';
         if (OPS_NO_VALUE.has(op)) return;
-        const meta = colMeta[colSel.value] || {};
+        const isInOp = op === 'IN' || op === 'NOT IN';
+        const meta = isInOp ? {} : (colMeta[colSel.value] || {});
         const inp = buildCellInput(meta, currentVal ?? '', true);
         inp.className = 'tbl-input filter-val-input';
         (inp as HTMLInputElement).placeholder = op === 'IN' || op === 'NOT IN' ? '1,2,3' : op === 'LIKE %%' ? 'search term' : 'value';
@@ -213,7 +214,7 @@ function addFilter(col: string): void {
     }
 
     const meta = (state.colMeta[col] || {}) as Partial<ColumnDef>;
-    const defaultOp = (meta.baseType && ['TINYINT','SMALLINT','MEDIUMINT','INT','BIGINT','FLOAT','DOUBLE','DECIMAL','NUMERIC'].includes(meta.baseType)) ? '=' : 'LIKE';
+    const defaultOp = (meta.baseType && ['TINYINT','SMALLINT','MEDIUMINT','INT','BIGINT','FLOAT','DOUBLE','DECIMAL','NUMERIC'].includes(meta.baseType)) ? '=' : 'LIKE %%';
     state.filters.push({ col, op: defaultOp, val: '' });
 
     if (!state.sort.length) state.sort = [{ col, dir: 'ASC' }];
@@ -231,5 +232,6 @@ function runSearch(): void {
         const val = (row.querySelector('.filter-val-input') as HTMLInputElement)?.value ?? '';
         if (state.filters[idx]) state.filters[idx].val = val;
     });
+    pinTab();
     loadTableData(state.currentDb!, state.currentTable!, 1);
 }
